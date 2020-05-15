@@ -36,6 +36,9 @@ class GoslingAgent(BaseAgent):
         self.last_time = 0
         self.my_score = 0
         self.foe_score = 0
+
+        self.defender = False
+        self.shooting = False
         
     def get_ready(self,packet):
         #Preps all of the objects that will be updated during play

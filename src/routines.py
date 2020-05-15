@@ -1,5 +1,4 @@
 from utils import *
-from rlbot.utils.structures.quick_chats import QuickChats
 
 #This file holds all of the mechanical tasks, called "routines", that the bot can do
 
@@ -352,7 +351,7 @@ class demoDefence():
         self.vector = vector
         self.direction = direction
     def run(self,agent):
-        self.target = agent.foes[self.target_index]
+        self.target = agent.foes[self.target_index].location
 
         car_to_target = self.target - agent.me.location
         distance_remaining = car_to_target.flatten().magnitude()
@@ -423,5 +422,4 @@ class short_shot():
 
         if abs(angles[1]) < 0.05 and (eta < 0.45 or distance < 150):
             agent.pop()
-            agent.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_IGotIt)
             agent.push(flip(agent.me.local(car_to_ball)))
