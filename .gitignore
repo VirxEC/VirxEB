@@ -109,3 +109,9 @@ ENV/
 
 # Gradle files
 /.gradle
+
+#vscode
+.vscode/
+
+# Other RL bots
+RLBotPackDeletable/
