@@ -66,8 +66,8 @@ class VirxEB(GoslingAgent):
                     elif self.me.boost < 24 and self.ball.latest_touched_team == self.team:
                         self.goto_nearest_boost()
                     else:
-                        self.backcheck()
                         self.push(short_shot(self.foe_goal.location))
+                        self.backcheck()
 
     def get_shot(self, target):
         shots = (find_hits(self, {"target": target}))['target']
@@ -90,8 +90,8 @@ class VirxEB(GoslingAgent):
                                 msg['index']), str(self.index), "|")
                             if msg['index'] < self.index:
                                 self.defender = False
-                                self.clear()
                                 self.goto_nearest_boost()
+                                self.clear()
                                 print(
                                     f"VirxEB: Index ({ self.index }) is no longer a round defender")
 
