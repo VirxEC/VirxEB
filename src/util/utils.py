@@ -1,5 +1,5 @@
 import math
-from objects import Vector3
+from util.objects import Vector3
 
 #This file is for small utilities for math and movement
 

@@ -1,4 +1,6 @@
-from utils import *
+from util.utils import *
+
+from rlbot.utils.structures.quick_chats import QuickChats
 
 #This file holds all of the mechanical tasks, called "routines", that the bot can do
 
@@ -27,6 +29,7 @@ class aerial_shot():
         #If we need a second jump we have to let go of the jump button for 3 frames, this counts how many frames we have let go for
         self.counter = 0
     def run(self,agent):
+        agent.shooting = True
         raw_time_remaining = self.intercept_time - agent.time
         #Capping raw_time_remaining above 0 to prevent division problems
         time_remaining = cap(raw_time_remaining,0.01,10.0)
@@ -95,6 +98,7 @@ class aerial_shot():
 
         if raw_time_remaining < -0.25 or not shot_valid(agent,self):
             agent.pop()
+            agent.shooting = False
             agent.push(recovery())
 
 class flip():
@@ -142,7 +146,7 @@ class goto():
 
         agent.line(self.target - Vector3(0,0,500),self.target + Vector3(0,0,500),[255,0,255])
         
-        if self.vector != None:
+        if self.vector is not None:
             #See commends for adjustment in jump_shot or aerial for explanation
             side_of_vector = sign(self.vector.cross((0,0,1)).dot(car_to_target))
             car_to_target_perp = car_to_target.cross((0,0,side_of_vector)).normalize()
@@ -157,13 +161,15 @@ class goto():
         local_target = agent.me.local(final_target - agent.me.location)
         
         angles = defaultPD(agent, local_target, self.direction)
-        defaultThrottle(agent, 2300, self.direction)
+        speed = 2300 if distance_remaining > 500 else 300
+        defaultThrottle(agent, speed, self.direction)
         
         agent.controller.boost = False
         agent.controller.handbrake = True if abs(angles[1]) > 2.3 else agent.controller.handbrake
 
         velocity = 1+agent.me.velocity.magnitude()
         if distance_remaining < 350:
+            agent.send_quick_chat(QuickChats.CHAT_EVERYONE, QuickChats.Information_InPosition)
             agent.pop()
         elif abs(angles[1]) < 0.05 and velocity > 600 and velocity < 2150 and distance_remaining / velocity > 2.0:
             agent.push(flip(local_target))
@@ -242,6 +248,7 @@ class jump_shot():
         self.dodging = False
         self.counter = 0
     def run(self,agent):
+        agent.shooting = True
         raw_time_remaining = self.intercept_time - agent.time
         #Capping raw_time_remaining above 0 to prevent division problems
         time_remaining = cap(raw_time_remaining,0.001,10.0)
@@ -288,6 +295,7 @@ class jump_shot():
             if raw_time_remaining <= 0.0 or (speed_required - 2300) * time_remaining > 45 or not shot_valid(agent,self):
                 #If we're out of time or not fast enough to be within 45 units of target at the intercept time, we pop
                 agent.pop()
+                agent.shooting = False
                 if agent.me.airborne:
                     agent.push(recovery())
             elif local_acceleration_required[2] > self.jump_threshold and local_acceleration_required[2] > local_acceleration_required.flatten().magnitude():
@@ -296,6 +304,7 @@ class jump_shot():
         else:
             if (raw_time_remaining > 0.2 and not shot_valid(agent,self,150)) or raw_time_remaining <= -0.9 or (not agent.me.airborne and self.counter > 0):
                 agent.pop()
+                agent.shooting = False
                 agent.push(recovery())
             elif self.counter == 0 and local_acceleration_required[2] > 0.0 and raw_time_remaining > 0.083:
                 #Initial jump to get airborne + we hold the jump button for extra power as required
@@ -324,7 +333,7 @@ class kickoff():
         local_target = agent.me.local(target - agent.me.location)
         defaultPD(agent, local_target)
         defaultThrottle(agent, 2300)
-        if local_target.magnitude() < 650:
+        if local_target.magnitude() < 350:
             agent.pop()
             #flip towards opponent goal
             agent.push(flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
@@ -345,48 +354,48 @@ class recovery():
         if not agent.me.airborne:
             agent.pop()
 
-class demoDefence():
-    def __init__(self, target_index, vector=None, direction = 1):
-        self.target_index = target_index
-        self.vector = vector
-        self.direction = direction
-    def run(self,agent):
-        self.target = agent.foes[self.target_index].location
+# class demoDefence():
+#     def __init__(self, target_index, vector=None, direction = 1):
+#         self.target_index = target_index
+#         self.vector = vector
+#         self.direction = direction
+#     def run(self,agent):
+#         self.target = agent.foes[self.target_index].location
 
-        car_to_target = self.target - agent.me.location
-        distance_remaining = car_to_target.flatten().magnitude()
+#         car_to_target = self.target - agent.me.location
+#         distance_remaining = car_to_target.flatten().magnitude()
 
-        agent.line(self.target - Vector3(0,0,500),self.target + Vector3(0,0,500),[255,0,255])
+#         agent.line(self.target - Vector3(0,0,500),self.target + Vector3(0,0,500),[255,0,255])
         
-        if self.vector != None:
-            #See commends for adjustment in jump_shot or aerial for explanation
-            side_of_vector = sign(self.vector.cross((0,0,1)).dot(car_to_target))
-            car_to_target_perp = car_to_target.cross((0,0,side_of_vector)).normalize()
-            adjustment = car_to_target.angle(self.vector) * distance_remaining / 3.14
-            final_target = self.target + (car_to_target_perp * adjustment)
-        else:
-            final_target = self.target
+#         if self.vector != None:
+#             #See commends for adjustment in jump_shot or aerial for explanation
+#             side_of_vector = sign(self.vector.cross((0,0,1)).dot(car_to_target))
+#             car_to_target_perp = car_to_target.cross((0,0,side_of_vector)).normalize()
+#             adjustment = car_to_target.angle(self.vector) * distance_remaining / 3.14
+#             final_target = self.target + (car_to_target_perp * adjustment)
+#         else:
+#             final_target = self.target
 
-        #Some adjustment to the final target to ensure it's inside the field and we don't try to dirve through any goalposts to reach it
-        if abs(agent.me.location[1]) > 5150: final_target[0] = cap(final_target[0],-750,750)
+#         #Some adjustment to the final target to ensure it's inside the field and we don't try to dirve through any goalposts to reach it
+#         if abs(agent.me.location[1]) > 5150: final_target[0] = cap(final_target[0],-750,750)
 
-        local_target = agent.me.local(final_target - agent.me.location)
+#         local_target = agent.me.local(final_target - agent.me.location)
         
-        angles = defaultPD(agent, local_target, self.direction)
-        defaultThrottle(agent, 2300, self.direction)
+#         angles = defaultPD(agent, local_target, self.direction)
+#         defaultThrottle(agent, 2300, self.direction)
         
-        agent.controller.boost = False
-        agent.controller.handbrake = True if abs(angles[1]) > 2.3 else agent.controller.handbrake
+#         agent.controller.boost = False
+#         agent.controller.handbrake = True if abs(angles[1]) > 2.3 else agent.controller.handbrake
 
-        velocity = 1+agent.me.velocity.magnitude()
-        if distance_remaining < 350:
-            agent.pop()
-        elif abs(angles[1]) < 0.05 and velocity > 600 and velocity < 2150 and distance_remaining / velocity > 2.0:
-            agent.push(flip(local_target))
-        elif abs(angles[1]) > 2.8 and velocity < 200:
-            agent.push(flip(local_target,True))
-        elif agent.me.airborne:
-            agent.push(recovery(self.target))
+#         velocity = 1+agent.me.velocity.magnitude()
+#         if distance_remaining < 350:
+#             agent.pop()
+#         elif abs(angles[1]) < 0.05 and velocity > 600 and velocity < 2150 and distance_remaining / velocity > 2.0:
+#             agent.push(flip(local_target))
+#         elif abs(angles[1]) > 2.8 and velocity < 200:
+#             agent.push(flip(local_target,True))
+#         elif agent.me.airborne:
+#             agent.push(recovery(self.target))
 
 
 class short_shot():
@@ -395,6 +404,7 @@ class short_shot():
     def __init__(self,target):
         self.target = target
     def run(self,agent):
+        agent.shooting = True
         car_to_ball,distance = (agent.ball.location - agent.me.location).normalize(True)
         ball_to_target = (self.target - agent.ball.location).normalize()
 
@@ -423,3 +433,4 @@ class short_shot():
         if abs(angles[1]) < 0.05 and (eta < 0.45 or distance < 150):
             agent.pop()
             agent.push(flip(agent.me.local(car_to_ball)))
+            agent.shooting = False
