@@ -11,7 +11,33 @@ from rlbot.utils.structures.quick_chats import QuickChats
 #         local_target = agent.me.local(relative_target)
 #         defaultPD(agent, local_target)
 #         defaultThrottle(agent, 2300)
+class wave_dash():
+    def __init__(self):
+        self.step = 0
+    
+    def run(self, agent):
+        if agent.me.velocity.flatten().magnitude() > 100:
+            target = agent.me.velocity.flatten().normalize() * 100 + Vector3(0, 0, 50)
+        else:
+            target = agent.me.matrix.forward.flatten() * 100 + Vector3(0, 0, 50)
+        
+        local_target = agent.me.local(target)
+        defaultPD(agent, local_target)
 
+        self.step += 1
+
+        if self.step < 5:
+            agent.controller.jump = True
+        elif self.step < 8:
+            agent.controller.jump = False
+        else:
+            if (agent.me.location + (agent.me.velocity * 0.2)).z < 5:
+                agent.controller.jump = True
+                agent.controller.pitch = -1
+                agent.controller.yaw = agent.controller.role = 0
+                agent.pop()
+            elif not agent.me.airborne:
+                agent.pop()
 
 class aerial_shot():
     # Very similar to jump_shot(), but instead designed to hit targets above 300uu
@@ -119,15 +145,19 @@ class aerial_shot():
 class flip():
     # Flip takes a vector in local coordinates and flips/dodges in that direction
     # cancel causes the flip to cancel halfway through, which can be used to half-flip
-    def __init__(self, vector, cancel=False):
+    # boost causes boost to be used for a faster kickoff
+    def __init__(self, vector, cancel=False, boost=False):
         self.vector = vector.normalize()
         self.pitch = abs(self.vector[0]) * -sign(self.vector[0])
         self.yaw = abs(self.vector[1]) * sign(self.vector[1])
         self.cancel = cancel
+        self.fast_flip = boost
         # the time the jump began
         self.time = -1
         # keeps track of the frames the jump button has been released
         self.counter = 0
+        self.stop_boost_time = 0
+        self.stop_boost = False
 
     def run(self, agent):
         if self.time == -1:
@@ -135,16 +165,28 @@ class flip():
             self.time = agent.time
         else:
             elapsed = agent.time - self.time
-        if elapsed < 0.15:
+        
+        if self.fast_flip:
+            agent.controller.boost = True
+        
+        if self.stop_boost and agent.time - self.stop_boost_time >= 0.1:
+            agent.controller.boost = False
+
+        if elapsed < 0.1:
             agent.controller.jump = True
-        elif elapsed >= 0.15 and self.counter < 3:
+        elif elapsed >= 0.1 and self.counter < 3:
             agent.controller.jump = False
             self.counter += 1
         elif elapsed < 0.3 or (not self.cancel and elapsed < 0.9):
+            if not self.stop_boost:
+                self.stop_boost = True
+                self.stop_boost_time = agent.time
+
             agent.controller.jump = True
             agent.controller.pitch = self.pitch
             agent.controller.yaw = self.yaw
         else:
+            agent.controller.boost = False
             agent.pop()
             agent.push(recovery())
 
@@ -375,18 +417,23 @@ class jump_shot():
 
 
 class kickoff():
-    # A simple 1v1 kickoff that just drives up behind the ball and dodges
-    # misses the boost on the slight-offcenter kickoffs haha
     def run(self, agent):
         target = agent.ball.location + Vector3(0, 200*side(agent.team), 0)
         local_target = agent.me.local(target - agent.me.location)
+        distance_to_target = local_target.magnitude()
+        agent.dbg_val(distance_to_target)
+
         defaultPD(agent, local_target)
         defaultThrottle(agent, 2300)
-        if local_target.magnitude() < 350:
+
+        if distance_to_target < 400:
             agent.pop()
             # flip towards opponent goal
             agent.push(
                 flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
+        elif distance_to_target > 3200:
+            agent.push(
+                flip(agent.me.local(agent.ball.location - agent.me.location), boost=True))
 
 
 class recovery():

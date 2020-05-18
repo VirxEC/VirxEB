@@ -9,8 +9,6 @@ from rlbot.utils.structures.quick_chats import QuickChats
 
 class VirxEB(GoslingAgent):
     def run(self):
-        self.dbg_val(self.ball_to_goal)
-
         if self.kickoff_flag and self.is_clear():
             self.do_kickoff()
 

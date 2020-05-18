@@ -1,4 +1,5 @@
 from util.routines import *
+from util.objects import Vector3
 
 #This file is for strategic tools
 
