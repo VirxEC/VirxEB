@@ -108,7 +108,8 @@ class GoslingAgent(BaseAgent):
             self.clear()
         # Tells us when to go for kickoff
         self.kickoff_flag = packet.game_info.is_round_active and packet.game_info.is_kickoff_pause
-        self.ball_to_goal = int(Vec3(self.friend_goal.location).dist(Vec3(self.ball.location)))
+        self.ball_to_goal = int(
+            Vec3(self.friend_goal.location).dist(Vec3(self.ball.location)))
 
     def dbg_val(self, item):
         self.debug.append(str(item))

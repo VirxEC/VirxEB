@@ -25,10 +25,6 @@ class VirxEB(GoslingAgent):
             self.shooting = False
 
     def panic_at(self, far_panic, close_panic):
-
-        if self.panic and self.shooting and self.ball_to_goal > far_panic + 250:
-            self.clear()
-
         if not self.shooting and self.ball_to_goal < far_panic:
             self.panic = True
 
@@ -46,7 +42,7 @@ class VirxEB(GoslingAgent):
             self.panic = False
 
     def playstyle_defend(self):
-        self.panic_at(3000, 1250)
+        self.panic_at(5000, 2000)
 
         if not self.shooting:
             if self.is_clear():
@@ -54,8 +50,8 @@ class VirxEB(GoslingAgent):
                     self.recover_from_air()
                 elif self.me.boost < 36 and self.ball.latest_touched_team == self.team:
                     self.goto_nearest_boost(only_small=True)
-
-                self.backcheck()
+                else:
+                    self.backcheck()
 
     def playstyle_attack(self):
         self.panic_at(2500, 1000)
@@ -108,7 +104,7 @@ class VirxEB(GoslingAgent):
                                 self.send_quick_chat(
                                     QuickChats.CHAT_EVERYONE, QuickChats.Information_Defending)
                                 self.push(goto(self.friend_goal.location,
-                                            self.foe_goal.location))
+                                               self.foe_goal.location))
                                 # foe_distances = [Vec3(foe.location).dist(self.me.location) for foe in self.foes]
                                 # nearest_foe_index = foe_distances.index(min(foe_distances))
                                 # self.push(demoDefence(nearest_foe_index))
@@ -175,8 +171,8 @@ class VirxEB(GoslingAgent):
         elif max_distance - 5 < car_distance and car_distance < max_distance + 5:
             self.defender = True
             self.send_comm({
-                    "match_defender": True
-                })
+                "match_defender": True
+            })
             self.send_quick_chat(QuickChats.CHAT_EVERYONE,
                                  QuickChats.Information_Defending)
             self.push(goto(self.friend_goal.location, self.foe_goal.location))
