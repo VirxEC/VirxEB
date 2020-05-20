@@ -86,12 +86,10 @@ class VirxEB(GoslingAgent):
                 if msg['team'] == self.team:
                     if self.defender:
                         if msg.get("match_defender") == True:
-                            print("|", str(msg['index'] < self.index), str(
-                                msg['index']), str(self.index), "|")
                             if msg['index'] < self.index:
                                 self.defender = False
-                                self.goto_nearest_boost()
                                 self.clear()
+                                self.goto_nearest_boost()
                                 print(
                                     f"VirxEB: Index ({ self.index }) is no longer a round defender")
 
