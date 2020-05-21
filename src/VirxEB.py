@@ -6,6 +6,10 @@ from util.vec import *
 from queue import Empty
 from rlbot.utils.structures.quick_chats import QuickChats
 
+# If you want to run tests:
+# Remove GoslingAgent from VirxEB
+# Add GoslingAgent to Test
+
 
 class VirxEB(GoslingAgent):
     def run(self):
@@ -74,7 +78,7 @@ class VirxEB(GoslingAgent):
         return None if len(shots) == 0 else shots[0]
 
     def handle_matchcomms(self):
-        for i in range(8):
+        for i in range(32):
             try:
                 msg = self.matchcomms.incoming_broadcast.get_nowait()
             except Empty:
@@ -136,7 +140,7 @@ class VirxEB(GoslingAgent):
         })
 
     def backcheck(self):
-        if (self.friend_goal.location - self.me.location).flatten().magnitude() > 300:
+        if (self.friend_goal.location - self.me.location).flatten().magnitude() > 200:
             self.push(goto(self.friend_goal.location, self.foe_goal.location))
 
     def recover_from_air(self):
@@ -191,21 +195,77 @@ class VirxEB(GoslingAgent):
                     closest = item
                     closest_distance = item_disatance
 
-            self.push(goto_boost(closest, self.ball.location))
-        else:
-            small_boosts = [
-                boost for boost in self.boosts if not boost.large and boost.active]
+            if closest_distance < 2500:
+                self.push(goto_boost(closest, self.ball.location))
+                return
 
-            if len(small_boosts) > 0:
-                closest = small_boosts[0]
-                closest_distance = (
-                    small_boosts[0].location - self.me.location).magnitude()
+        small_boosts = [
+            boost for boost in self.boosts if not boost.large and boost.active]
 
-                for item in small_boosts:
-                    item_distance = (
-                        item.location - self.me.location).magnitude()
-                    if item_distance < closest_distance:
-                        closest = item
-                        closest_distance = item_distance
+        if len(small_boosts) > 0:
+            closest = small_boosts[0]
+            closest_distance = (
+                small_boosts[0].location - self.me.location).magnitude()
 
+            for item in small_boosts:
+                item_distance = (
+                    item.location - self.me.location).magnitude()
+                if item_distance < closest_distance:
+                    closest = item
+                    closest_distance = item_distance
+
+            if closest_distance < 1000:
+                self.push(goto_boost(closest, self.ball.location))
+
+
+class Test():
+    def init(self):
+        self.debugging = True
+
+    def run(self):
+        if self.is_clear():
+            if self.me.boost < 12:
+                self.goto_nearest_boost()
+            else:
+                self.push(
+                    flip(self.me.local(self.foe_goal.location)))
+
+    def goto_nearest_boost(self, only_small=False):
+        self.send_quick_chat(QuickChats.CHAT_EVERYONE,
+                             QuickChats.Information_NeedBoost)
+        large_boosts = [
+            boost for boost in self.boosts if boost.large and boost.active]
+
+        if len(large_boosts) > 0 and only_small == False:
+            closest = large_boosts[0]
+            closest_distance = (
+                large_boosts[0].location - self.me.location).magnitude()
+
+            for item in large_boosts:
+                item_disatance = (
+                    item.location - self.me.location).magnitude()
+                if item_disatance < closest_distance:
+                    closest = item
+                    closest_distance = item_disatance
+
+            if closest_distance < 2500:
+                self.push(goto_boost(closest, self.ball.location))
+                return
+
+        small_boosts = [
+            boost for boost in self.boosts if not boost.large and boost.active]
+
+        if len(small_boosts) > 0:
+            closest = small_boosts[0]
+            closest_distance = (
+                small_boosts[0].location - self.me.location).magnitude()
+
+            for item in small_boosts:
+                item_distance = (
+                    item.location - self.me.location).magnitude()
+                if item_distance < closest_distance:
+                    closest = item
+                    closest_distance = item_distance
+
+            if closest_distance < 1000:
                 self.push(goto_boost(closest, self.ball.location))

@@ -40,7 +40,8 @@ class GoslingAgent(BaseAgent):
         self.shooting = False
         self.panic = False
 
-        self.debug = []
+        self.debug = [[], []]
+        self.debugging = False
 
     def get_ready(self, packet):
         field_info = self.get_field_info()
@@ -50,6 +51,9 @@ class GoslingAgent(BaseAgent):
                 i, boost.location, boost.is_full_boost))
         self.refresh_player_lists(packet)
         self.ball.update(packet)
+
+        self.init()
+
         self.ready = True
 
     def refresh_player_lists(self, packet):
@@ -72,15 +76,20 @@ class GoslingAgent(BaseAgent):
 
     def debug_stack(self):
         # Draws the stack on the screen
-        self.debug.append("STACK:")
+        self.debug[0].append("STACK:")
 
         for i in range(len(self.stack)-1, -1, -1):
-            self.debug.append(self.stack[i].__class__.__name__)
+            self.debug[0].append(self.stack[i].__class__.__name__)
 
         self.renderer.draw_string_3d(
-            self.me.location, 1, 1, "\n".join(self.debug), self.renderer.blue())
+            self.me.location, 1, 1, "\n".join(self.debug[0]), self.renderer.team_color())
 
-        self.debug = []
+        self.debug[0] = []
+
+    def debug_2d(self):
+        self.renderer.draw_string_2d(100, 100, 1, 1, "\n".join(
+            self.debug[1]), self.renderer.green())
+        self.debug[1] = []
 
     def clear(self):
         self.shooting = False
@@ -112,7 +121,10 @@ class GoslingAgent(BaseAgent):
             Vec3(self.friend_goal.location).dist(Vec3(self.ball.location)))
 
     def dbg_val(self, item):
-        self.debug.append(str(item))
+        self.debug[0].append(str(item))
+
+    def dbg(self, item):
+        self.debug[1].append(str(item))
 
     def get_output(self, packet):
         # Reset controller
@@ -129,10 +141,19 @@ class GoslingAgent(BaseAgent):
         if len(self.stack) > 0:
             self.stack[-1].run(self)
 
-        self.debug_stack()
+        if self.debugging:
+            self.debug_stack()
+            self.debug_2d
+        else:
+            self.debug = [[], []]
+
         self.renderer.end_rendering()
 
         return self.controller
+
+    def init(self):
+        # override this with any init code
+        pass
 
     def run(self):
         # override this with your strategy code
