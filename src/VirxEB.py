@@ -12,6 +12,19 @@ from rlbot.utils.structures.quick_chats import QuickChats
 
 
 class VirxEB(GoslingAgent):
+    def init(self):
+        team = 1 if self.team == 0 else -1
+        
+        self.defensive_shots = [
+            (Vector3(3100, 0, 100), Vector3(2900, 0, 100)),
+            (Vector3(-3100, 0, 100), Vector3(-2900, 0, 100)),
+            (Vector3(3600, 0, 200), Vector3(-3600, 0, 200)),
+            (Vector3(3100, team * 3250, 100), Vector3(2900, team * 3250, 100)),
+            (Vector3(-3100, team * 3250, 100), Vector3(-2900, team * 3250, 100))
+        ]
+        
+        self.defensive_shot = None
+    
     def run(self):
         if self.kickoff_flag and self.is_clear():
             self.do_kickoff()
@@ -25,12 +38,19 @@ class VirxEB(GoslingAgent):
 
         if self.is_clear():
             self.shooting = False
-        
+
         if not self.shooting:
-            if self.team == 1 and self.me.location > 5100:
+            if self.team == 1 and self.me.location.y > 5100:
                 self.backcheck()
-            elif self.team == 0 and self.me.location < -5100:
+            elif self.team == 0 and self.me.location.y < -5100:
                 self.backcheck()
+
+    def smart_shot(self, shot):
+        shot = self.get_shot(shot)
+        if shot is not None:
+            self.shoot_from(shot)
+            return True
+        return False
 
     def panic_at(self, far_panic, close_panic):
         if not self.shooting and self.ball_to_goal < far_panic:
@@ -39,12 +59,20 @@ class VirxEB(GoslingAgent):
             if not self.is_clear():
                 self.clear()
 
-            shot = self.get_shot((Vector3(1250, 0, 320), Vector3(-1250, 0, 320)))
-            if shot is not None:
-                self.shoot_from(shot)
-            elif self.ball_to_goal < close_panic:
-                self.push(short_shot(self.foe_goal.location))
-
+            if self.defensive_shot == None:
+                self.defensive_shot = 0
+                
+            if self.defensive_shot >= len(self.defensive_shots):
+                self.defensive_shot = None
+                if self.ball_to_goal < close_panic:
+                    self.push(short_shot(Vector3(0, 0, 320)))
+                return
+            
+            if self.smart_shot(self.defensive_shots[self.defensive_shot]):
+                self.defensive_shot = None
+                return
+            
+            self.defensive_shot += 1
         else:
             self.panic = False
 
@@ -146,16 +174,13 @@ class VirxEB(GoslingAgent):
 
     def backcheck(self):
         if (self.friend_goal.location - self.me.location).flatten().magnitude() > 200:
-            self.push(goto(self.friend_goal.location - Vector3(0, self.team * 300, 0), self.foe_goal.location))
+            self.push(goto(self.friend_goal.location, self.ball.location))
 
     def recover_from_air(self):
         self.shooting = False
         self.push(recovery(self.friend_goal.location))
 
     def do_kickoff(self):
-        self.shooting = False
-        self.clear()
-
         friend_distances = [Vec3(friend.location).dist(
             Vec3(self.ball.location)) for friend in self.friends]
         friend_distances.append(
@@ -166,14 +191,25 @@ class VirxEB(GoslingAgent):
         car_distance = Vec3(self.me.location).dist(Vec3(self.ball.location))
 
         if min_distance - 5 < car_distance and car_distance < min_distance + 5:
-            self.push(kickoff())
-            self.send_quick_chat(QuickChats.CHAT_EVERYONE,
-                                 QuickChats.Information_IGotIt)
-            self.send_comm({
-                "attacking": True
-            })
-            self.defender = False
+            if not self.shooting or self.shooting_short:
+                shot = self.get_shot(
+                    (self.foe_goal.right_post, self.foe_goal.left_post))
+                
+                if shot is None:
+                    self.push(kickoff())
+                else:
+                    self.shoot_from(shot)
+
+                self.send_quick_chat(QuickChats.CHAT_EVERYONE,
+                                    QuickChats.Information_IGotIt)
+                self.send_comm({
+                    "attacking": True
+                })
+                self.defender = False
         elif max_distance - 5 < car_distance and car_distance < max_distance + 5:
+            self.shooting = False
+            self.clear()
+
             self.defender = True
             self.send_comm({
                 "match_defender": True
@@ -228,49 +264,5 @@ class Test():
         self.debugging = True
 
     def run(self):
-        if self.is_clear():
-            if self.me.boost < 12:
-                self.goto_nearest_boost()
-            else:
-                self.push(
-                    flip(self.me.local(self.foe_goal.location)))
-
-    def goto_nearest_boost(self, only_small=False):
-        self.send_quick_chat(QuickChats.CHAT_EVERYONE,
-                             QuickChats.Information_NeedBoost)
-        large_boosts = [
-            boost for boost in self.boosts if boost.large and boost.active]
-
-        if len(large_boosts) > 0 and only_small == False:
-            closest = large_boosts[0]
-            closest_distance = (
-                large_boosts[0].location - self.me.location).magnitude()
-
-            for item in large_boosts:
-                item_disatance = (
-                    item.location - self.me.location).magnitude()
-                if item_disatance < closest_distance:
-                    closest = item
-                    closest_distance = item_disatance
-
-            if closest_distance < 2500:
-                self.push(goto_boost(closest, self.ball.location))
-                return
-
-        small_boosts = [
-            boost for boost in self.boosts if not boost.large and boost.active]
-
-        if len(small_boosts) > 0:
-            closest = small_boosts[0]
-            closest_distance = (
-                small_boosts[0].location - self.me.location).magnitude()
-
-            for item in small_boosts:
-                item_distance = (
-                    item.location - self.me.location).magnitude()
-                if item_distance < closest_distance:
-                    closest = item
-                    closest_distance = item_distance
-
-            if closest_distance < 1000:
-                self.push(goto_boost(closest, self.ball.location))
+        self.dbg_val(self.team)
+        self.dbg_val(self.foes[0].location)

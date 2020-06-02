@@ -434,8 +434,8 @@ class kickoff():
             agent.pop()
             agent.push(
                 flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
-        elif distance_to_target > 3200:
-            agent.push(wave_dash())
+        # elif distance_to_target > 3200:
+        #     agent.push(wave_dash())
 
 
 class recovery():
@@ -465,6 +465,8 @@ class short_shot():
 
     def run(self, agent):
         agent.shooting = True
+        agent.shooting_short = True
+        
         car_to_ball, distance = (
             agent.ball.location - agent.me.location).normalize(True)
         ball_to_target = (self.target - agent.ball.location).normalize()
@@ -502,3 +504,4 @@ class short_shot():
             agent.pop()
             agent.push(flip(agent.me.local(car_to_ball)))
             agent.shooting = False
+            agent.shooting_short = False

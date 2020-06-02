@@ -38,6 +38,7 @@ class GoslingAgent(BaseAgent):
 
         self.defender = False
         self.shooting = False
+        self.shooting_short = False
         self.panic = False
 
         self.debug = [[], []]
@@ -113,7 +114,7 @@ class GoslingAgent(BaseAgent):
         self.game.update(packet)
         self.time = packet.game_info.seconds_elapsed
         # When a new kickoff begins we empty the stack
-        if self.kickoff_flag == False and packet.game_info.is_round_active and packet.game_info.is_kickoff_pause:
+        if self.kickoff_flag == False and (not self.shooting or self.shooting_short) and packet.game_info.is_round_active and packet.game_info.is_kickoff_pause:
             self.clear()
         # Tells us when to go for kickoff
         self.kickoff_flag = packet.game_info.is_round_active and packet.game_info.is_kickoff_pause
