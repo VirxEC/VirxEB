@@ -25,6 +25,12 @@ class VirxEB(GoslingAgent):
 
         if self.is_clear():
             self.shooting = False
+        
+        if not self.shooting:
+            if self.team == 1 and self.me.location > 5100:
+                self.backcheck()
+            elif self.team == 0 and self.me.location < -5100:
+                self.backcheck()
 
     def panic_at(self, far_panic, close_panic):
         if not self.shooting and self.ball_to_goal < far_panic:
@@ -33,8 +39,7 @@ class VirxEB(GoslingAgent):
             if not self.is_clear():
                 self.clear()
 
-            shot = self.get_shot(
-                (self.foe_goal.left_post, self.foe_goal.right_post))
+            shot = self.get_shot((Vector3(1250, 0, 320), Vector3(-1250, 0, 320)))
             if shot is not None:
                 self.shoot_from(shot)
             elif self.ball_to_goal < close_panic:
@@ -127,7 +132,7 @@ class VirxEB(GoslingAgent):
                     "centering": True
                 })
                 self.send_quick_chat(QuickChats.CHAT_EVERYONE,
-                                     QuickChats.Information_Centering)
+                                     QuickChats.Information_IGotIt)
 
     def send_comm(self, msg):
         message = {
@@ -141,7 +146,7 @@ class VirxEB(GoslingAgent):
 
     def backcheck(self):
         if (self.friend_goal.location - self.me.location).flatten().magnitude() > 200:
-            self.push(goto(self.friend_goal.location, self.foe_goal.location))
+            self.push(goto(self.friend_goal.location - Vector3(0, self.team * 300, 0), self.foe_goal.location))
 
     def recover_from_air(self):
         self.shooting = False

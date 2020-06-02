@@ -24,7 +24,7 @@ class wave_dash():
         if agent.me.velocity.flatten().magnitude() > 100:
             target = agent.me.velocity.flatten().normalize() * 100 + Vector3(0, 0, 50)
         else:
-            target = agent.me.matrix.forward.flatten() * 100 + Vector3(0, 0, 50)
+            target = agent.me.forward.flatten() * 100 + Vector3(0, 0, 50)
 
         local_target = agent.me.local(target)
         defaultPD(agent, local_target)

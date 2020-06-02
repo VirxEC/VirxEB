@@ -364,7 +364,7 @@ class Vector3:
 
     def __str__(self):
         # Vector3's can be printed to console
-        return str(self.data)
+        return F"({self.data[0]}, {self.data[1]}, {self.data[2]})"
     __repr__ = __str__
 
     def __eq__(self, value):
