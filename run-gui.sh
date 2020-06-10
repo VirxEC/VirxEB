@@ -1,1 +1,4 @@
-python3 -c "from rlbot_gui import gui; gui.start()"
+#!/bin/bash
+
+cd "$(dirname "$0")"
+python3 ./run.py gui
