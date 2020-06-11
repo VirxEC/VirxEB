@@ -4,7 +4,6 @@ from rlbot.agents.base_agent import BaseAgent, SimpleControllerState
 
 from util.vec import Vec3
 
-from rlbot_action_client import ApiClient, Configuration
 from rlbot_action_server.bot_action_broker import BotActionBroker, run_action_server, find_usable_port
 from rlbot_action_server.bot_holder import set_bot_action_broker
 from rlbot_action_server.models import BotAction, AvailableActions, ActionChoice, ApiResponse

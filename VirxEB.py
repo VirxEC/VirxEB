@@ -14,19 +14,14 @@ from rlbot_action_server.models import BotAction, AvailableActions
 
 class VirxEB(GoslingAgent):
     def get_actions_currently_available(self) -> List[AvailableActions]:
-        actions = AvailableActions(entity_name="ActionBot", current_action=self.action_broker.current_action,
+        actions = AvailableActions(entity_name="VirxEB", current_action=self.action_broker.current_action,
             available_actions=[
-                BotAction(description="Turn left", action_type="turn", data={'value': -1}),
-                BotAction(description="Drive forwards", action_type="turn", data={'value': 0}),
-                BotAction(description="Turn right", action_type="turn", data={'value': 1}),
-                BotAction(description="Brake", action_type="throttle", data={'value': 0}),
-                BotAction(description="Accelerate Forwards", action_type="throttle", data={'value': 1}),
-                BotAction(description="Accelerate Backwards", action_type="throttle", data={'value': -1}),
-                BotAction(description="Boost", action_type="boost", data={'value': True}),
-                BotAction(description="Not boost", action_type="boost", data={'value': False}),
-                BotAction(description="Attack", action_type="playstyle", data="attack"),
-                BotAction(description="Defend", action_type="playstyle", data="defend"),
-                BotAction(description="Panic", action_type="playstyle", data="panic"),
+                BotAction(description="get large boost", action_type="get_boost", data={'value': True}),
+                BotAction(description="get small boost", action_type="get_boost", data={'value': False}),
+                BotAction(description="attack", action_type="playstyle", data={'value': False}),
+                BotAction(description="defend", action_type="playstyle", data={'value': True}),
+                BotAction(description="panic", action_type="panic", data={}),
+                BotAction(description="backcheck", action_type="backcheck", data={}),
             ])
         return [actions]
     
@@ -65,16 +60,23 @@ class VirxEB(GoslingAgent):
         
         if self.action_broker.current_action:
             action_type = self.action_broker.current_action.action_type
-            current_action = self.action_broker.current_action
+            ca_data = self.action_broker.current_action.data['value']
             
-            if action_type == 'turn':
-                self.controller.steer = current_action.data['value']
-            elif action_type == 'throttle':
-                self.controller.throttle = current_action.data['value']
-            elif action_type == 'boost':
-                self.controller.boost = current_action.data['value']
-            elif action_type == "playstyle":
-                if current_action == "attack"
+            if action_type == "playstyle":
+                self.defender = ca_data
+            elif action_type == "panic":
+                self.panic_at(50000, 50000)
+            elif action_type == "get_boost":
+                if not self.is_clear():
+                    self.clear()
+                
+                self.goto_nearest_boost(only_small=ca_data)
+            elif action_type == "backcheck":
+                if not self.is_clear():
+                    self.clear()
+                
+                self.backcheck()
+                    
 
     def smart_shot(self, shot):
         shot = self.get_shot(shot)
