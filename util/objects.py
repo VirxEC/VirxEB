@@ -1,16 +1,22 @@
 import math
+
 import rlbot.utils.structures.game_data_struct as game_data_struct
 from rlbot.agents.base_agent import BaseAgent, SimpleControllerState
-
-from util.vec import Vec3
-
-from rlbot_action_server.bot_action_broker import BotActionBroker, run_action_server, find_usable_port
+from rlbot_action_server.bot_action_broker import (BotActionBroker,
+                                                   find_usable_port,
+                                                   run_action_server)
 from rlbot_action_server.bot_holder import set_bot_action_broker
-from rlbot_action_server.models import BotAction, AvailableActions, ActionChoice, ApiResponse
+from rlbot_action_server.models import (ActionChoice, ApiResponse,
+                                        AvailableActions, BotAction)
 from rlbot_twitch_broker_client import ActionServerRegistration
 from rlbot_twitch_broker_client.api.register_api import RegisterApi
 from rlbot_twitch_broker_client.defaults import STANDARD_TWITCH_BROKER_PORT
 from urllib3.exceptions import MaxRetryError
+
+from util.vec import Vec3
+
+# This file holds all of the objects used in gosling utils
+# Includes custom vector and matrix objects
 
 
 class MyActionBroker(BotActionBroker):
@@ -24,9 +30,6 @@ class MyActionBroker(BotActionBroker):
     def set_action(self, choice: ActionChoice):
         self.current_action = choice.action
         return ApiResponse(200, f"VirxEB will now {self.current_action.description}")
-
-# This file holds all of the objects used in gosling utils
-# Includes custom vector and matrix objects
 
 
 class GoslingAgent(BaseAgent):
@@ -60,6 +63,7 @@ class GoslingAgent(BaseAgent):
         self.foe_score = 0
 
         self.defender = False
+        self.can_shoot = None
         self.shooting = False
         self.shooting_short = False
         self.panic = False
@@ -158,7 +162,6 @@ class GoslingAgent(BaseAgent):
             self.get_ready(packet)
         self.preprocess(packet)
 
-        self.renderer.begin_rendering()
         # Run our strategy code
         self.run()
         # run the routine on the end of the stack
@@ -167,38 +170,39 @@ class GoslingAgent(BaseAgent):
 
         if self.debugging:
             self.debug_stack()
-            self.debug_2d
+            self.debug_2d()
         else:
             self.debug = [[], []]
 
-        self.renderer.end_rendering()
-
         return self.controller
-    
+
     def stay_connected_to_twitch_broker(self, port):
         register_api_config = Configuration()
         register_api_config.host = f"http://127.0.0.1:{STANDARD_TWITCH_BROKER_PORT}"
-        twitch_broker_register = RegisterApi(ApiClient(configuration=register_api_config))
+        twitch_broker_register = RegisterApi(
+            ApiClient(configuration=register_api_config))
         while True:
             try:
                 twitch_broker_register.register_action_server(
                     ActionServerRegistration(base_url=f"http://127.0.0.1:{port}"))
             except MaxRetryError:
-                self.logger.warning('Failed to register with twitch broker, will try again...')
+                self.logger.warning(
+                    'Failed to register with twitch broker, will try again...')
             sleep(10)
-    
-    # override these methods
+
     def get_actions_currently_available(self):
         pass
-    
+
     def init(self):
+        # override this with any init code
         pass
 
     def run(self):
+        # override this with your strategy code
         pass
 
-    # def handle_quick_chat(self, index, team, quick_chat):
-    #     pass
+    def handle_quick_chat(self, index, team, quick_chat):
+        pass
 
 
 class car_object:

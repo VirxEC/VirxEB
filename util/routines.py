@@ -1,7 +1,6 @@
-from util.utils import *
-
 from rlbot.utils.structures.quick_chats import QuickChats
 
+from util.utils import *
 
 # Example routine for driving towards the ball, non-stop.
 # class atba():
@@ -171,7 +170,8 @@ class flip():
         else:
             elapsed = agent.time - self.time
 
-        agent.controller.boost = True
+        if not self.cancel:
+            agent.controller.boost = True
 
         if self.stop_boost and agent.time - self.stop_boost_time >= 0.1:
             agent.controller.boost = False
@@ -462,10 +462,18 @@ class short_shot():
     # It does not require ball prediction and kinda guesses at where the ball will be on its own
     def __init__(self, target):
         self.target = target
+        self.start_time = None
 
     def run(self, agent):
         agent.shooting = True
         agent.shooting_short = True
+        
+        if self.start_time == None:
+            self.start_time = agent.time
+        elif agent.time - self.start_time > 3:
+            agent.pop()
+            agent.shooting = False
+            agent.shooting_short = False
         
         car_to_ball, distance = (
             agent.ball.location - agent.me.location).normalize(True)
