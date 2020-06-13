@@ -13,7 +13,7 @@ from rlbot_action_server.models import BotAction, AvailableActions
 
 
 class VirxEB(GoslingAgent):
-    def get_actions_currently_available(self) -> List[AvailableActions]:
+    def get_actions_currently_available(self):
         actions = AvailableActions(entity_name="VirxEB", current_action=self.action_broker.current_action,
             available_actions=[
                 BotAction(description="get large boost", action_type="get_boost", data={'value': True}),
@@ -76,6 +76,8 @@ class VirxEB(GoslingAgent):
                     self.clear()
                 
                 self.backcheck()
+        
+        return self.controller
                     
 
     def smart_shot(self, shot):

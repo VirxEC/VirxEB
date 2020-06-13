@@ -18,7 +18,7 @@ class MyActionBroker(BotActionBroker):
         self.bot = bot
         self.current_action: BotAction = None
 
-    def get_actions_currently_available(self) -> List[AvailableActions]:
+    def get_actions_currently_available(self):
         return self.bot.get_actions_currently_available()
 
     def set_action(self, choice: ActionChoice):
@@ -188,7 +188,7 @@ class GoslingAgent(BaseAgent):
             sleep(10)
     
     # override these methods
-    def get_actions_currently_available(self) -> List[AvailableActions]:
+    def get_actions_currently_available(self):
         pass
     
     def init(self):
