@@ -1,14 +1,16 @@
-from util.tools import *
+from queue import Empty
+
+from rlbot.utils.structures.quick_chats import QuickChats
+
 from util.objects import *
 from util.routines import *
+from util.tools import *
 from util.vec import *
-
-from queue import Empty
-from rlbot.utils.structures.quick_chats import QuickChats
 
 # If you want to run tests:
 # Remove GoslingAgent from VirxEB
 # Add GoslingAgent to Test
+# TODO If one bot says "I got it", then forbid other bots from shooting for 5 seconds (not 6!). Also, make sure that bots don't say "I got it!" for short shots..
 
 
 class VirxEB(GoslingAgent):
@@ -18,8 +20,10 @@ class VirxEB(GoslingAgent):
 
         self.defensive_shots = (
             (self.foe_goal.left_post, self.foe_goal.right_post),
-            (Vector3(3100, foe_team * 3250, 100), Vector3(2900, foe_team * 3250, 100)),
-            (Vector3(-3100, foe_team * 3250, 100), Vector3(-2900, foe_team * 3250, 100)),
+            (Vector3(3100, foe_team * 3250, 100),
+             Vector3(2900, foe_team * 3250, 100)),
+            (Vector3(-3100, foe_team * 3250, 100),
+             Vector3(-2900, foe_team * 3250, 100)),
             (Vector3(2900, 0, 200), Vector3(-2900, 0, 200)),
             (Vector3(-3600, 0, 100), Vector3(-2900, 0, 100)),
             (Vector3(3600, 0, 100), Vector3(2900, 0, 100)),
@@ -35,6 +39,10 @@ class VirxEB(GoslingAgent):
             self.do_kickoff()
 
         self.handle_matchcomms()
+
+        if self.can_shoot != None:
+            if self.time - self.can_shoot >= 3:
+                self.can_shoot = None
 
         if self.defender:
             self.playstyle_defend()
@@ -53,6 +61,11 @@ class VirxEB(GoslingAgent):
         if self.shooting and not self.shooting_short:
             self.dbg_val(self.stack[0].intercept_time - self.time)
 
+    def handle_quick_chat(self, index, team, quick_chat):
+        if team != self.team and index != self.index:
+            if quick_chat == QuickChats.Information_IGotIt:
+                self.can_shoot = self.time
+
     def smart_shot(self, shot):
         shot = self.get_shot(shot)
         if shot is not None:
@@ -64,7 +77,7 @@ class VirxEB(GoslingAgent):
         if self.ball_to_goal < far_panic:
             for d_shot in self.defensive_shots:
                 self.line(*d_shot, color=(255, 0, 0))
-            
+
             if not self.shooting:
                 self.panic = True
 
@@ -80,18 +93,22 @@ class VirxEB(GoslingAgent):
                         self.push(short_shot(Vector3(0, 0, 320)))
                     return
 
-                if self.smart_shot(self.defensive_shots[self.defensive_shot]):
-                    if not self.stack[0].intercept_time - self.time > 5:
-                        self.defensive_shot = None
-                        return
+                if self.can_shoot == None:
+                    if self.smart_shot(self.defensive_shots[self.defensive_shot]):
+                        if not self.stack[0].intercept_time - self.time > 5:
+                            self.defensive_shot = None
+                            return
 
-                    self.clear()
+                        self.clear()
 
-                self.defensive_shot += 1
+                    self.defensive_shot += 1
             else:
                 self.panic = False
         else:
             self.panic = False
+
+        if not self.panic:
+            self.defensive_shot = None
 
     def playstyle_defend(self):
         self.panic_at(5000, 2000)
@@ -114,8 +131,8 @@ class VirxEB(GoslingAgent):
                     self.recover_from_air()
                 else:
                     shot = self.get_shot(
-                        (self.foe_goal.left_post, self.foe_goal.right_post))
-                    if shot is not None and not shot.intercept_time - self.time > 6:
+                        (self.foe_goal.left_post, self.foe_goal.right_post)) if self.can_shoot == None else None
+                    if shot != None and not shot.intercept_time - self.time > 6:
                         self.shoot_from(shot, defend=False)
                     elif self.me.boost < 36 and self.ball.latest_touched_team == self.team:
                         self.goto_nearest_boost()
@@ -146,35 +163,14 @@ class VirxEB(GoslingAgent):
                                 print(
                                     f"VirxEB: Index ({ self.index }) is no longer a round defender")
 
-                    else:
-                        if self.is_clear():
-                            if msg.get("attacking") == True:
-                                print("VirxEB: Defending!")
-                                self.send_quick_chat(
-                                    QuickChats.CHAT_EVERYONE, QuickChats.Information_Defending)
-                                self.push(goto(self.friend_goal.location,
-                                               self.foe_goal.location))
-
-                            elif msg.get("centering") == True:
-                                print("VirxEB: Getting ready for the pass!")
-                                self.push(goto(Vector3(0, 0, 0)))
-
     def shoot_from(self, shot, defend=True):
         if defend and not self.shooting and not self.is_clear():
             self.clear()
 
         self.push(shot)
 
-        if defend:
-            self.send_quick_chat(QuickChats.CHAT_EVERYONE,
-                                 QuickChats.Information_IGotIt)
-        else:
-            if self.ball_to_goal > 5000:
-                self.send_comm({
-                    "centering": True
-                })
-                self.send_quick_chat(QuickChats.CHAT_EVERYONE,
-                                     QuickChats.Information_IGotIt)
+        self.send_quick_chat(QuickChats.CHAT_EVERYONE,
+                             QuickChats.Information_IGotIt)
 
     def send_comm(self, msg):
         message = {
@@ -277,5 +273,4 @@ class Test():
         self.debugging = True
 
     def run(self):
-        self.dbg_val(self.team)
-        self.dbg_val(self.foes[0].location)
+        pass

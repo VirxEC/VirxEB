@@ -1,4 +1,5 @@
 import math
+
 import rlbot.utils.structures.game_data_struct as game_data_struct
 from rlbot.agents.base_agent import BaseAgent, SimpleControllerState
 
@@ -37,6 +38,7 @@ class GoslingAgent(BaseAgent):
         self.foe_score = 0
 
         self.defender = False
+        self.can_shoot = None
         self.shooting = False
         self.shooting_short = False
         self.panic = False
@@ -157,8 +159,8 @@ class GoslingAgent(BaseAgent):
         # override this with your strategy code
         pass
 
-    # def handle_quick_chat(self, index, team, quick_chat):
-    #     pass
+    def handle_quick_chat(self, index, team, quick_chat):
+        pass
 
 
 class car_object:

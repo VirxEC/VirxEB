@@ -1,7 +1,6 @@
-from util.utils import *
-
 from rlbot.utils.structures.quick_chats import QuickChats
 
+from util.utils import *
 
 # Example routine for driving towards the ball, non-stop.
 # class atba():
