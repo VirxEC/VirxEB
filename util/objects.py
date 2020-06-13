@@ -135,7 +135,6 @@ class GoslingAgent(BaseAgent):
             self.get_ready(packet)
         self.preprocess(packet)
 
-        self.renderer.begin_rendering()
         # Run our strategy code
         self.run()
         # run the routine on the end of the stack
@@ -144,11 +143,9 @@ class GoslingAgent(BaseAgent):
 
         if self.debugging:
             self.debug_stack()
-            self.debug_2d
+            self.debug_2d()
         else:
             self.debug = [[], []]
-
-        self.renderer.end_rendering()
 
         return self.controller
 

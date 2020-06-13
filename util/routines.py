@@ -462,10 +462,18 @@ class short_shot():
     # It does not require ball prediction and kinda guesses at where the ball will be on its own
     def __init__(self, target):
         self.target = target
+        self.start_time = None
 
     def run(self, agent):
         agent.shooting = True
         agent.shooting_short = True
+        
+        if self.start_time == None:
+            self.start_time = agent.time
+        elif agent.time - self.start_time > 3:
+            agent.pop()
+            agent.shooting = False
+            agent.shooting_short = False
         
         car_to_ball, distance = (
             agent.ball.location - agent.me.location).normalize(True)
