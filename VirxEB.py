@@ -10,7 +10,6 @@ from util.vec import *
 # If you want to run tests:
 # Remove GoslingAgent from VirxEB
 # Add GoslingAgent to Test
-# TODO If one bot says "I got it", then forbid other bots from shooting for 5 seconds (not 6!). Also, make sure that bots don't say "I got it!" for short shots..
 
 
 class VirxEB(GoslingAgent):
@@ -40,9 +39,8 @@ class VirxEB(GoslingAgent):
 
         self.handle_matchcomms()
 
-        if self.can_shoot != None:
-            if self.time - self.can_shoot >= 3:
-                self.can_shoot = None
+        if self.can_shoot != None and self.time - self.can_shoot >= 3:
+            self.can_shoot = None
 
         if self.defender:
             self.playstyle_defend()

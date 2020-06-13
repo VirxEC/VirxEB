@@ -170,7 +170,8 @@ class flip():
         else:
             elapsed = agent.time - self.time
 
-        agent.controller.boost = True
+        if not self.cancel:
+            agent.controller.boost = True
 
         if self.stop_boost and agent.time - self.stop_boost_time >= 0.1:
             agent.controller.boost = False
