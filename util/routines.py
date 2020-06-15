@@ -2,14 +2,6 @@ from rlbot.utils.structures.quick_chats import QuickChats
 
 from util.utils import *
 
-# Example routine for driving towards the ball, non-stop.
-# class atba():
-#     def run(self, agent):
-#         relative_target = agent.ball.location - agent.me.location
-#         local_target = agent.me.local(relative_target)
-#         defaultPD(agent, local_target)
-#         defaultThrottle(agent, 2300)
-
 
 class wave_dash():
     # This is a straight-line only version of flip()
@@ -256,8 +248,12 @@ class goto_boost():
     def __init__(self, boost, target=None):
         self.boost = boost
         self.target = target
+        self.start_time = None
 
     def run(self, agent):
+        if self.start_time == None:
+            self.start_time = agent.time
+
         car_to_boost = self.boost.location - agent.me.location
         distance_remaining = car_to_boost.flatten().magnitude()
 
@@ -299,6 +295,8 @@ class goto_boost():
             agent.push(recovery(self.target))
         elif abs(angles[1]) < 0.05 and velocity > 600 and velocity < 2150 and (distance_remaining / velocity > 2.0 or (adjustment < 90 and car_to_target/velocity > 2.0)):
             agent.push(flip(local_target))
+        elif agent.time - self.start_time > 3:
+            agent.pop()
 
 
 class jump_shot():
@@ -470,10 +468,6 @@ class short_shot():
         
         if self.start_time == None:
             self.start_time = agent.time
-        elif agent.time - self.start_time > 3:
-            agent.pop()
-            agent.shooting = False
-            agent.shooting_short = False
         
         car_to_ball, distance = (
             agent.ball.location - agent.me.location).normalize(True)
@@ -511,5 +505,9 @@ class short_shot():
         if abs(angles[1]) < 0.05 and (eta < 0.45 or distance < 150):
             agent.pop()
             agent.push(flip(agent.me.local(car_to_ball)))
+            agent.shooting = False
+            agent.shooting_short = False
+        elif agent.time - self.start_time > 3:
+            agent.pop()
             agent.shooting = False
             agent.shooting_short = False

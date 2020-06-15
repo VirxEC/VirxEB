@@ -96,6 +96,7 @@ class GoslingAgent(BaseAgent):
 
     def clear(self):
         self.shooting = False
+        self.shooting_short = False
         self.stack = []
 
     def is_clear(self):
@@ -267,8 +268,8 @@ class game_object:
         self.match_ended = False
 
         team_side = 1 if team == 1 else -1
-        self.foe_left_field = Vector3(team_side * 150, team_side * 6000, 320)
-        self.foe_right_field = Vector3(-team_side * 150, team_side * 6000, 320)
+        self.foe_left_field = Vector3(team_side * 800, team_side * 5200, 320)
+        self.foe_right_field = Vector3(-team_side * 800, team_side * 5200, 320)
 
     def update(self, packet):
         game = packet.game_info
