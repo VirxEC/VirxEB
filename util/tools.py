@@ -2,7 +2,7 @@ import math
 
 from util.objects import Vector3
 from util.routines import aerial_shot, jump_shot
-from util.tools import cap, find_slope, in_field, post_correction
+from util.utils import cap, find_slope, in_field, post_correction
 
 #This file is for strategic tools
 
