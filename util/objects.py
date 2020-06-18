@@ -90,7 +90,7 @@ class GoslingAgent(BaseAgent):
         self.debug[0] = []
 
     def debug_2d(self):
-        self.renderer.draw_string_2d(100, 100, 1, 1, "\n".join(
+        self.renderer.draw_string_2d(300, 300, 1, 1, "\n".join(
             self.debug[1]), self.renderer.green())
         self.debug[1] = []
 

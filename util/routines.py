@@ -1,6 +1,7 @@
 from rlbot.utils.structures.quick_chats import QuickChats
 
-from util.utils import *
+from util.utils import (Vector3, backsolve, cap, defaultPD, defaultThrottle,
+                        shot_valid, side, sign)
 
 
 class wave_dash():
