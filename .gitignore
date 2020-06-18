@@ -112,6 +112,3 @@ ENV/
 
 #vscode
 .vscode/
-
-# Other RL bots
-RLBotPackDeletable/
