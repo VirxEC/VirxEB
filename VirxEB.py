@@ -129,8 +129,13 @@ class VirxEB(GoslingAgent):
     def playstyle_attack(self):
         self.panic_at(2500, 1500)
 
-        if not self.shooting and (self.is_clear() or self.stack[0].__name__ == "goto"):
-            if self.me.airborne and not self.stack[0].__name__ == "goto":
+        method_name = None
+
+        if not self.is_clear():
+            method_name = self.stack[0].__class__.__name__
+
+        if not self.shooting and (self.is_clear() or method_name == "goto"):
+            if self.me.airborne and not method_name == "goto":
                 self.recover_from_air()
             else:
                 for o_shot in self.offensive_shots:
@@ -146,7 +151,7 @@ class VirxEB(GoslingAgent):
                             self.shoot_from(shot, defend=False)
                             found_shot = True
 
-                if not found_shot and not self.stack[0].__name__ == "goto":
+                if not found_shot and not method_name == "goto":
                     if self.me.boost < 36 and self.ball.latest_touched_team == self.team:
                         self.goto_nearest_boost()
                     elif self.me.boost < 50 and self.ball.latest_touched_team == self.team:

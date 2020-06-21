@@ -85,13 +85,13 @@ class GoslingAgent(BaseAgent):
             self.debug[0].append(self.stack[i].__class__.__name__)
 
         self.renderer.draw_string_3d(
-            self.me.location, 1, 1, "\n".join(self.debug[0]), self.renderer.team_color())
+            self.me.location, 2, 2, "\n".join(self.debug[0]), self.renderer.team_color())
 
         self.debug[0] = []
 
     def debug_2d(self):
-        self.renderer.draw_string_2d(300, 300, 1, 1, "\n".join(
-            self.debug[1]), self.renderer.green())
+        self.renderer.draw_string_2d(300, 300, 2, 2, "\n".join(
+            self.debug[1]), self.renderer.blue())
         self.debug[1] = []
 
     def clear(self):
