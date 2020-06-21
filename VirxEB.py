@@ -129,8 +129,8 @@ class VirxEB(GoslingAgent):
     def playstyle_attack(self):
         self.panic_at(2500, 1500)
 
-        if not self.shooting and self.is_clear():
-            if self.me.airborne:
+        if not self.shooting and (self.is_clear() or self.stack[0].__name__ == "goto"):
+            if self.me.airborne and not self.stack[0].__name__ == "goto":
                 self.recover_from_air()
             else:
                 for o_shot in self.offensive_shots:
@@ -142,10 +142,11 @@ class VirxEB(GoslingAgent):
                     for o_shot in self.offensive_shots:
                         shot = self.get_shot(o_shot)
                         if shot != None and not shot.intercept_time - self.time > 6:
+                            self.clear()
                             self.shoot_from(shot, defend=False)
                             found_shot = True
 
-                if not found_shot:
+                if not found_shot and not self.stack[0].__name__ == "goto":
                     if self.me.boost < 36 and self.ball.latest_touched_team == self.team:
                         self.goto_nearest_boost()
                     elif self.me.boost < 50 and self.ball.latest_touched_team == self.team:
@@ -205,15 +206,27 @@ class VirxEB(GoslingAgent):
             "VirxEB": msg
         })
 
-    def backcheck(self):
+    def backcheck(self, simple=False):
         if (self.friend_goal.location - self.me.location).flatten().magnitude() > 200:
-            self.push(goto(self.friend_goal.location, self.ball.location))
+            if not self.defender and not simple and (self.team == 0 and self.ball.location.y > 2560) or (self.team == 1 and self.ball.location.y < -2560):
+                bc_x = 0
+
+                if self.ball.location.x > 2048:
+                    bc_x = 2048
+                elif self.ball.location.x < -2048:
+                    bc_x = -2048
+
+                self.push(goto(Vector3(bc_x, 0, 0)))
+            else:
+                defensive_position = self.friend_goal.location + (Vector3(100, 0 ,0) if self.team == 0 else Vector3(-100, 0, 0))
+                self.push(goto(defensive_position, self.ball.location))
+                self.push(goto(defensive_position))
             return True
         
         return False
 
     def recover_from_air(self):
-        self.shooting = False
+        self.clear()
         self.push(recovery(self.friend_goal.location))
 
     def do_kickoff(self):
