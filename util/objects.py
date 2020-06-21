@@ -134,7 +134,7 @@ class GoslingAgent(BaseAgent):
     def clear(self):
         self.shooting = False
         self.shooting_short = False
-        self.backcheck = False
+        self.backchecking = False
         self.panic = False
         self.stack = []
 
