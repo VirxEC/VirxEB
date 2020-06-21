@@ -72,7 +72,7 @@ class GoslingAgent(BaseAgent):
         self.shooting = False
         self.shooting_short = False
         self.panic = False
-        self.backcheck = False
+        self.backchecking = False
 
         self.debug = [[], []]
         self.debugging = False
