@@ -11,16 +11,25 @@ from util.vec import Vec3
 
 class VirxEB(GoslingAgent):
     def get_actions_currently_available(self):
-        actions = AvailableActions(entity_name="VirxEB", current_action=self.action_broker.current_action,
-            available_actions=[
-                BotAction(description="get large boost", action_type="get_boost", data={'value': True}),
-                BotAction(description="get small boost", action_type="get_boost", data={'value': False}),
-                BotAction(description="attack", action_type="playstyle", data={'value': False}),
-                BotAction(description="defend", action_type="playstyle", data={'value': True}),
-                BotAction(description="panic", action_type="panic", data={}),
-                BotAction(description="backcheck", action_type="backcheck", data={}),
-            ])
-        return [actions]
+        a_actions = []
+
+        if self.me.boost < 60:
+            a_actions.append(BotAction(description="Get small boost(s)", action_type="get_boost", data={'value': False}))
+            if self.me.boost < 36:
+                a_actions.append(BotAction(description="Get large boost", action_type="get_boost", data={'value': True}))
+        
+        if self.defender:
+            a_actions.append(BotAction(description="Attack (playstyle)", action_type="playstyle", data={'value': False}))
+        else:
+            a_actions.append(BotAction(description="Defend (playstyle)", action_type="playstyle", data={'value': True}))
+        
+        if not self.shooting:
+            a_actions.append(BotAction(description="Take a shot", action_type="panic", data={}))
+        
+        if not self.backcheck:
+            a_actions.append(BotAction(description="Backcheck", action_type="backcheck", data={}))
+
+        return [AvailableActions(entity_name=f"VirxEB", current_action=self.action_broker.current_action, available_actions=a_actions)]
     
     def handle_actions(self):
         if self.action_broker.current_action:
@@ -32,14 +41,10 @@ class VirxEB(GoslingAgent):
             elif action_type == "panic":
                 self.panic_at(50000, 50000)
             elif action_type == "get_boost":
-                if not self.is_clear():
-                    self.clear()
-                
+                self.clear()
                 self.goto_nearest_boost(only_small=ca_data)
             elif action_type == "backcheck":
-                if not self.is_clear():
-                    self.clear()
-                
+                self.clear()
                 self.backcheck()
         
     
@@ -70,6 +75,9 @@ class VirxEB(GoslingAgent):
         self.debugging = True
 
     def run(self):
+        if self.is_clear():
+            self.clear()
+
         if self.kickoff_flag and self.is_clear():
             self.do_kickoff()
 
@@ -84,7 +92,7 @@ class VirxEB(GoslingAgent):
             self.playstyle_attack()
 
         if self.is_clear():
-            self.shooting = False
+            self.clear()
 
             if not self.shooting:
                 if self.team == 1 and self.me.location.y > 5100:
@@ -94,6 +102,8 @@ class VirxEB(GoslingAgent):
 
         if self.shooting and not self.shooting_short:
             self.dbg_val(self.stack[0].intercept_time - self.time)
+        
+        self.handle_actions()
 
     def handle_quick_chat(self, index, team, quick_chat):
         if team != self.team and index != self.index:
@@ -127,7 +137,8 @@ class VirxEB(GoslingAgent):
                         if abs(self.me.location.y) > abs(self.ball.location.y):
                             self.push(short_shot(Vector3(0, 0, 320)))
                         else:
-                            self.backcheck()
+                            team = -1 if self.team == 0 else 1
+                            self.push(goto(Vector3(0, self.ball.location.y + (team * 200), 0)))
                     return
 
                 if self.can_shoot == None:
@@ -154,7 +165,7 @@ class VirxEB(GoslingAgent):
             if self.is_clear():
                 if self.me.airborne:
                     self.recover_from_air()
-                elif self.me.boost < 36 and self.ball.latest_touched_team == self.team:
+                elif self.me.boost < 50 and self.ball.latest_touched_team == self.team:
                     self.goto_nearest_boost(only_small=True)
                 else:
                     self.backcheck()
@@ -162,30 +173,30 @@ class VirxEB(GoslingAgent):
     def playstyle_attack(self):
         self.panic_at(2500, 1500)
 
-        if not self.shooting:
-            if self.is_clear():
-                if self.me.airborne:
-                    self.recover_from_air()
-                else:
-                    for i in range(3):
-                        self.line(*self.offensive_shots[i])
+        if not self.shooting and self.is_clear():
+            if self.me.airborne:
+                self.recover_from_air()
+            else:
+                for o_shot in self.offensive_shots:
+                    self.line(*o_shot)
 
-                    if self.can_shoot == None:
-                        shot = self.get_shot(self.offensive_shots[0])
-                    if shot != None and not shot.intercept_time - self.time > 6:
-                        self.shoot_from(shot, defend=False)
-                    elif self.me.boost < 36 and self.ball.latest_touched_team == self.team:
+                found_shot = False
+
+                if self.can_shoot == None:
+                    for o_shot in self.offensive_shots:
+                        shot = self.get_shot(o_shot)
+                        if shot != None and not shot.intercept_time - self.time > 6:
+                            self.shoot_from(shot, defend=False)
+                            found_shot = True
+
+                if not found_shot:
+                    if self.me.boost < 36 and self.ball.latest_touched_team == self.team:
                         self.goto_nearest_boost()
-                    elif self.can_shoot == None:
-                        for i in range(1,3):
-                            shot = self.get_shot(self.offensive_shots[i])
-                            if shot != None and not shot.intercept_time - self.time > 6:
-                                self.shoot_from(shot, defend=False)
-                                return
-                        
-                        self.backcheck()
+                    elif self.me.boost < 50 and self.ball.latest_touched_team == self.team:
+                        self.goto_nearest_boost(only_small=True)
                     else:
-                        self.backcheck()
+                        if not self.backcheck() and self.me.boost < 50:
+                            self.goto_nearest_boost(only_small=True)
 
     def get_shot(self, target):
         shots = (find_hits(self, {"target": target}))['target']
@@ -240,7 +251,11 @@ class VirxEB(GoslingAgent):
 
     def backcheck(self):
         if (self.friend_goal.location - self.me.location).flatten().magnitude() > 200:
+            self.backcheck = True
             self.push(goto(self.friend_goal.location, self.ball.location))
+            return True
+
+        return False
 
     def recover_from_air(self):
         self.shooting = False
@@ -256,20 +271,7 @@ class VirxEB(GoslingAgent):
 
         car_distance = Vec3(self.me.location).dist(Vec3(self.ball.location))
 
-        if max_distance - 5 < car_distance and car_distance < max_distance + 5:
-            self.clear()
-
-            self.defender = True
-
-            print(f"VirxEB ({self.index}): Defending!")
-
-            self.send_comm({
-                "match_defender": True
-            })
-            self.send_quick_chat(QuickChats.CHAT_EVERYONE,
-                                 QuickChats.Information_Defending)
-            self.push(goto(self.friend_goal.location, self.foe_goal.location))
-        elif min_distance - 5 < car_distance and car_distance < min_distance + 5:
+        if min_distance - 5 < car_distance and car_distance < min_distance + 5:
             if not self.shooting or self.shooting_short:
                 self.clear()
 
@@ -290,6 +292,19 @@ class VirxEB(GoslingAgent):
                     "attacking": True
                 })
                 self.defender = False
+        elif max_distance - 5 < car_distance and car_distance < max_distance + 5:
+            self.clear()
+
+            self.defender = True
+
+            print(f"VirxEB ({self.index}): Defending!")
+
+            self.send_comm({
+                "match_defender": True
+            })
+            self.send_quick_chat(QuickChats.CHAT_EVERYONE,
+                                 QuickChats.Information_Defending)
+            self.push(goto(self.friend_goal.location, self.foe_goal.location))
 
     def goto_nearest_boost(self, only_small=False):
         self.send_quick_chat(QuickChats.CHAT_EVERYONE,

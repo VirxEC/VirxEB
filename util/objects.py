@@ -72,6 +72,7 @@ class GoslingAgent(BaseAgent):
         self.shooting = False
         self.shooting_short = False
         self.panic = False
+        self.backcheck = False
 
         self.debug = [[], []]
         self.debugging = False
@@ -133,6 +134,8 @@ class GoslingAgent(BaseAgent):
     def clear(self):
         self.shooting = False
         self.shooting_short = False
+        self.backcheck = False
+        self.panic = False
         self.stack = []
 
     def is_clear(self):
