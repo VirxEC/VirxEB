@@ -3,7 +3,8 @@ import math
 import rlbot.utils.structures.game_data_struct as game_data_struct
 from rlbot.agents.base_agent import BaseAgent, SimpleControllerState
 
-from util.vec import Vec3
+from util.interface import get_predictions
+from util.prediction import BallPrediction, EnemyPrediction, TeammatePrediction
 
 # This file holds all of the objects used in gosling utils
 # Includes custom vector and matrix objects
@@ -43,6 +44,9 @@ class GoslingAgent(BaseAgent):
         self.shooting_short = False
         self.panic = False
 
+        # Use this for things that only need to be run every other tick
+        self.odd_tick = False
+
         self.debug = [[], []]
         self.debugging = False
 
@@ -54,6 +58,25 @@ class GoslingAgent(BaseAgent):
                 i, boost.location, boost.is_full_boost))
         self.refresh_player_lists(packet)
         self.ball.update(packet)
+
+        print(f"VirxEB ({self.index}): Setting up predictive services...")
+        self.predictions = get_predictions()
+
+        if len(self.foes) > 0:
+            self.enemy_prediction = EnemyPrediction()
+        else:
+            print(
+                f"VirxEB ({self.index}: I have no foes, so I'm skipping EnemyPrediction")
+            self.enemy_prediction = None
+
+        if len(self.friends) > 0:
+            self.teammate_prediction = TeammatePrediction()
+        else:
+            print(
+                f"VirxEB ({self.index}): I have no friends, so I'm skipping TeammatePrediction")
+            self.teammate_prediction = None
+
+        self.ball_prediction = BallPrediction()
 
         self.init()
 
@@ -85,13 +108,13 @@ class GoslingAgent(BaseAgent):
             self.debug[0].append(self.stack[i].__class__.__name__)
 
         self.renderer.draw_string_3d(
-            self.me.location, 2, 2, "\n".join(self.debug[0]), self.renderer.team_color())
+            self.me.location, 2, 2, "\n".join(self.debug[0]), self.renderer.team_color(alt_color=True))
 
         self.debug[0] = []
 
     def debug_2d(self):
         self.renderer.draw_string_2d(300, 300, 2, 2, "\n".join(
-            self.debug[1]), self.renderer.blue())
+            self.debug[1]), self.renderer.team_color(alt_color=True))
         self.debug[1] = []
 
     def clear(self):
@@ -122,7 +145,20 @@ class GoslingAgent(BaseAgent):
         # Tells us when to go for kickoff
         self.kickoff_flag = packet.game_info.is_round_active and packet.game_info.is_kickoff_pause
         self.ball_to_goal = int(
-            Vec3(self.friend_goal.location).dist(Vec3(self.ball.location)))
+            self.friend_goal.location.dist(self.ball.location))
+
+        if self.odd_tick:
+            if self.enemy_prediction != None:
+                self.enemy_prediction.add_agent(self)
+
+            if self.teammate_prediction != None:
+                self.teammate_prediction.add_agent(self)
+
+            self.ball_prediction.add_agent(self)
+
+            self.predictions = get_predictions()
+
+        self.odd_tick = not self.odd_tick
 
     def dbg_val(self, item):
         self.debug[0].append(str(item))
@@ -151,6 +187,7 @@ class GoslingAgent(BaseAgent):
             self.debug = [[], []]
 
         return self.controller
+        # return SimpleControllerState()
 
     def init(self):
         # override this with any init code
@@ -289,7 +326,7 @@ class Matrix3:
     # Matrix3[2] is the "up" direction of a given car
     # If you have a distance between the car and some object, ie ball.location - car.location,
     # you can convert that to local coordinates by dotting it with this matrix
-    #ie: local_ball_location = Matrix3.dot(ball.location - car.location)
+    # ie: local_ball_location = Matrix3.dot(ball.location - car.location)
     def __init__(self, pitch, yaw, roll):
         CP = math.cos(pitch)
         SP = math.sin(pitch)
@@ -367,6 +404,9 @@ class Vector3:
         # Vector3's can be printed to console
         return F"({self.data[0]}, {self.data[1]}, {self.data[2]})"
     __repr__ = __str__
+
+    def int(self):
+        return Vector3(int(self[0]), int(self[1]), int(self[2]))
 
     def __eq__(self, value):
         # Vector3's can be compared with:
@@ -455,6 +495,14 @@ class Vector3:
         # Returns the angle between this Vector3 and another Vector3
         return math.acos(round(self.flatten().normalize().dot(value.flatten().normalize()), 4))
 
+    def angle3D(self, value):
+        def cap(x, low, high):
+            return max(min(x, high), low)
+
+        # Returns the angle between this Vector3 and another Vector3
+        # return math.acos(round(self.normalize().dot(value.normalize()), 4))
+        return math.acos(cap(self.normalize().dot(value.normalize()), -1, 1))
+
     def rotate(self, angle):
         # Rotates this Vector3 by the given angle in radians
         # Note that this is only 2D, in the x and y axis
@@ -472,3 +520,21 @@ class Vector3:
         if start.dot(s) < end.dot(s):
             return end
         return start
+
+    def dist(self, value):
+        return (self - value).magnitude()
+
+    def flat_dist(self, value):
+        return (self.flatten() - value.flatten()).magnitude()
+
+    def cap(self, low, high):
+        new_vector = []
+        for item in self:
+            if item < low:
+                new_vector.append(low)
+            elif item > high:
+                new_vector.append(high)
+            else:
+                new_vector.append(item)
+
+        return Vector3(*new_vector)
