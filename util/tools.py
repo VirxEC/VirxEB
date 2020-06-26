@@ -17,10 +17,7 @@ def find_hits(agent, targets):
     if struct == None:
         return hits
 
-    max_aerial_height = 800
-
-    if len(agent.friends) == 0:
-        max_aerial_height = 500
+    max_aerial_height = 500
 
     # Begin looking at slices 0.25s into the future
     # The number of slices
@@ -114,8 +111,7 @@ def find_risky_hits(agent, targets):
             # assume we are traveling towards the ball
             distance -= (agent.me.velocity.flatten().magnitude() * i / 60)
             forward_angle = direction.angle(agent.me.forward)
-            forward_time = time_remaining - \
-                (forward_angle * 0.318 * 0.5)  # cut this times in half
+            forward_time = time_remaining - (forward_angle * 0.318 * 0.5)  # cut this times in half
             # remove the 5% extra distance assumption and forget about boost requirements
             if forward_time > 0.0 and (distance / forward_time) < 2300:
                 for pair in targets:

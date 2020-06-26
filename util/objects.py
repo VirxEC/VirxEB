@@ -1,4 +1,5 @@
 import math
+from copy import copy, deepcopy
 
 import rlbot.utils.structures.game_data_struct as game_data_struct
 from rlbot.agents.base_agent import BaseAgent, SimpleControllerState
@@ -51,6 +52,9 @@ class GoslingAgent(BaseAgent):
         self.debug = [[], []]
         self.debugging = False
 
+        # self.maxDT = 1/120
+        # self.dt = 0
+
     def get_ready(self, packet):
         field_info = self.get_field_info()
         for i in range(field_info.num_boosts):
@@ -83,10 +87,8 @@ class GoslingAgent(BaseAgent):
 
     def refresh_player_lists(self, packet):
         # Useful to keep separate from get_ready because humans can join/leave a match
-        self.friends = [car_object(i, packet) for i in range(
-            packet.num_cars) if packet.game_cars[i].team == self.team and i != self.index]
-        self.foes = [car_object(i, packet) for i in range(
-            packet.num_cars) if packet.game_cars[i].team != self.team]
+        self.friends = [car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team == self.team and i != self.index]
+        self.foes = [car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team != self.team]
 
     def push(self, routine):
         self.stack.append(routine)
@@ -105,13 +107,12 @@ class GoslingAgent(BaseAgent):
         for i in range(len(self.stack)-1, -1, -1):
             self.debug[0].append(self.stack[i].__class__.__name__)
 
-        self.renderer.draw_string_3d(
-            self.me.location, 2, 2, "\n".join(self.debug[0]), self.renderer.team_color(alt_color=True))
+        self.renderer.draw_string_3d(self.me.location, 2, 2, "\n".join(self.debug[0]), self.renderer.team_color(alt_color=True))
 
         self.debug[0] = []
 
     def debug_2d(self):
-        if len(self.friends) == 0 or len(self.foes) < 1:
+        if len(self.friends) == 0 and len(self.foes) <= 1:
             self.renderer.draw_string_2d(20, 300, 2, 2, "\n".join(self.debug[1]), self.renderer.team_color(alt_color=True))
         self.debug[1] = []
 
@@ -125,6 +126,8 @@ class GoslingAgent(BaseAgent):
 
     def preprocess(self, packet):
         # Calling the update functions for all of the objects
+        # self.deltaTime = max(min(1, self.maxDT), packet.game_info.seconds_elapsed - self.time)
+
         if packet.num_cars != len(self.friends)+len(self.foes)+1:
             self.refresh_player_lists(packet)
         for car in self.friends:
@@ -138,23 +141,31 @@ class GoslingAgent(BaseAgent):
         self.game.update(packet)
         self.time = packet.game_info.seconds_elapsed
         # When a new kickoff begins we empty the stack
-        #  and (not self.shooting or self.shooting_short)
         if self.kickoff_flag == False and packet.game_info.is_round_active and packet.game_info.is_kickoff_pause:
             self.kickoff_done = False
             self.clear()
         # Tells us when to go for kickoff
         self.kickoff_flag = packet.game_info.is_round_active and packet.game_info.is_kickoff_pause
-        self.ball_to_goal = int(
-            self.friend_goal.location.dist(self.ball.location))
+        self.ball_to_goal = int(self.friend_goal.location.dist(self.ball.location))
 
-        if self.odd_tick:
+        if self.odd_tick and packet.game_info.is_round_active:
+            agent_copy = {
+                "ball": deepcopy(self.ball),
+                "foes": deepcopy(self.foes),
+                "ball_to_goal": copy(self.ball_to_goal),
+                "ball_struct": self.get_ball_prediction_struct(),
+                "team": copy(self.team),
+                "me": deepcopy(self.me),
+                "friends": deepcopy(friends)
+            }
+
             if self.enemy_prediction != None:
-                self.enemy_prediction.add_agent(self)
+                self.enemy_prediction.add_agent(agent_copy)
 
             if self.teammate_prediction != None:
-                self.teammate_prediction.add_agent(self)
+                self.teammate_prediction.add_agent(agent_copy)
 
-            self.ball_prediction.add_agent(self)
+            self.ball_prediction.add_agent(agent_copy)
 
             self.predictions = get_predictions()
 
@@ -177,7 +188,7 @@ class GoslingAgent(BaseAgent):
         # Run our strategy code
         self.run()
         # run the routine on the end of the stack
-        if len(self.stack) > 0:
+        if not self.is_clear():
             self.stack[-1].run(self)
 
         if self.debugging:

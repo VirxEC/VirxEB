@@ -1,6 +1,6 @@
 from queue import Empty
 
-# from rlbot.utils.game_state_util import BallState, CarState, GameState, Physics
+# from rlbot.utils.game_state_util import BallState, GameState, Physics
 # from rlbot.utils.game_state_util import Vector3 as GSVec3
 from rlbot.utils.structures.quick_chats import QuickChats
 
@@ -17,20 +17,16 @@ class VirxEB(GoslingAgent):
 
         self.defensive_shots = (
             (self.foe_goal.left_post, self.foe_goal.right_post),
-            (Vector3(3100, foe_team * 3250, 100),
-             Vector3(2900, foe_team * 3250, 100)),
-            (Vector3(-3100, foe_team * 3250, 100),
-             Vector3(-2900, foe_team * 3250, 100)),
+            (Vector3(3100, foe_team * 3250, 100), Vector3(2900, foe_team * 3250, 100)),
+            (Vector3(-3100, foe_team * 3250, 100), Vector3(-2900, foe_team * 3250, 100)),
             (Vector3(-3600, 0, 100), Vector3(-2900, 0, 100)),
             (Vector3(3600, 0, 100), Vector3(2900, 0, 100)),
         )
 
         self.offensive_shots = (
             (self.foe_goal.left_post, self.foe_goal.right_post),
-            (Vector3(foe_team * 893, foe_team * 5120, 100),
-             Vector3(foe_team * 893, foe_team * 4720, 320)),
-            (Vector3(-foe_team * 893, foe_team * 5120, 100),
-             Vector3(-foe_team * 893, foe_team * 4720, 320))
+            (Vector3(foe_team * 893, foe_team * 5120, 100), Vector3(foe_team * 893, foe_team * 4720, 320)),
+            (Vector3(-foe_team * 893, foe_team * 5120, 100), Vector3(-foe_team * 893, foe_team * 4720, 320))
         )
 
         self.defensive_shot = None
@@ -38,23 +34,15 @@ class VirxEB(GoslingAgent):
 
     def run(self):
         # self.dbg(f"({self.me.location.x}, {self.me.location.y}, {self.me.location.z})")
-        if self.kickoff_done:
-            self.do_kickoff()
-            self.kickoff_done = True
+        # self.dbg_val(self.defender)
+        if not self.kickoff_done:
+            if self.is_clear():
+                self.do_kickoff()
         else:
 
             """
             # This is for state setting the ball to high up for aerial testing
-            if self.me.boost < 90:
-                car_state = CarState(boost_amount=100)
-                game_state = GameState(
-                    cars={
-                        self.index: car_state
-                    }
-                )
-                self.set_game_state(game_state)
-
-            if self.ball.location.z < 97.8:
+            if self.ball.location.z < 98:
                 ball_state = BallState(Physics(location=GSVec3(0, 0, 1200), velocity=GSVec3(
                     0, 0, 0), angular_velocity=GSVec3(0, 0, 0)))
                 game_state = GameState(
@@ -80,7 +68,7 @@ class VirxEB(GoslingAgent):
             else:
                 self.playstyle_attack()
 
-            if self.is_clear():
+            if self.is_clear() and not self.defender:
                 self.clear()
 
                 if not self.shooting:
@@ -89,10 +77,9 @@ class VirxEB(GoslingAgent):
                     elif self.team == 0 and self.me.location.y < -5100:
                         self.backcheck()
 
-            if self.is_clear():
-                self.clear()
-                self.smart_shot(
-                    (self.foe_goal.left_post, self.foe_goal.right_post))
+                if self.is_clear():
+                    self.clear()
+                    self.smart_shot((self.foe_goal.left_post, self.foe_goal.right_post))
 
             ball_prediction = self.predictions['ball_struct']
 
@@ -209,8 +196,7 @@ class VirxEB(GoslingAgent):
     def get_shot(self, target, cap=6):
         shots = []
 
-        if self.ball.location.z < 500:
-            shots = (find_hits(self, {"target": target}))['target']
+        shots = (find_hits(self, {"target": target}))['target']
 
         if len(shots) == 0 and len(self.friends) > 0 and self.me.boost > 50:
             shots = (find_risky_hits(self, {"target": target}))['target']
@@ -333,6 +319,7 @@ class VirxEB(GoslingAgent):
                 })
                 self.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_Defending)
                 self.push(goto(self.friend_goal.location, self.foe_goal.location))
+                self.kickoff_done = True
         else:
             self.offensive_kickoff()
 
@@ -344,9 +331,7 @@ class VirxEB(GoslingAgent):
         back_left = (-256, 3840)
         back = (0, 4608)
 
-        def kickoff_check(pair):
-            threshold = 50
-
+        def kickoff_check(pair, threshold=50):
             if pair[0] - threshold < self.me.location.x and self.me.location.x < pair[0] + threshold and pair[1] - threshold < abs(self.me.location.y) and abs(self.me.location.y) < pair[1] + threshold:
                 return True
 
