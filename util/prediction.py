@@ -26,7 +26,7 @@ class EnemyPrediction:
                 foe_dist = agent['ball'].location.dist(foe.location)
                 foe_distances.append(foe_dist)
 
-                if len(agent['friends']) == 0 and foe_dist < 500 and agent['ball_to_goal'] > 5120 and foe.location.y - 200 < agent['ball']location.y and agent['ball']location.y < foe.location.y + 200:
+                if len(agent['friends']) == 0 and foe_dist < 500 and agent['ball_to_goal'] > 5120 and foe.location.y - 200 < agent['ball'].location.y and agent['ball']location.y < foe.location.y + 200:
                     set_prediction('can_shoot', False)
                     break
                 else:

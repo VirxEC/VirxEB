@@ -156,7 +156,7 @@ class GoslingAgent(BaseAgent):
                 "ball_struct": self.get_ball_prediction_struct(),
                 "team": copy(self.team),
                 "me": deepcopy(self.me),
-                "friends": deepcopy(friends)
+                "friends": deepcopy(self.friends)
             }
 
             if self.enemy_prediction != None:
