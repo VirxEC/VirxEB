@@ -1,11 +1,11 @@
 from queue import Empty
 
-from rlbot.utils.game_state_util import BallState, CarState, GameState, Physics
-from rlbot.utils.game_state_util import Vector3 as GSVec3
+# from rlbot.utils.game_state_util import BallState, CarState, GameState, Physics
+# from rlbot.utils.game_state_util import Vector3 as GSVec3
 from rlbot.utils.structures.quick_chats import QuickChats
 
 from util.objects import GoslingAgent, Vector3
-from util.routines import goto, goto_boost, kickoff, recovery, short_shot, atba
+from util.routines import goto, goto_boost, generic_kickoff, recovery, short_shot, atba, back_kickoff
 from util.tools import find_hits, find_risky_hits
 from util.vec import Vec3
 from util.utils import side, sign
@@ -37,74 +37,76 @@ class VirxEB(GoslingAgent):
         self.debugging = True
 
     def run(self):
-        if self.kickoff_flag and self.is_clear():
+        # self.dbg(f"({self.me.location.x}, {self.me.location.y}, {self.me.location.z})")
+        if self.kickoff_done:
             self.do_kickoff()
-
-        """
-        if self.me.boost < 90:
-            car_state = CarState(boost_amount=100)
-            game_state = GameState(
-                cars={
-                    self.index: car_state
-                }
-            )
-            self.set_game_state(game_state)
-
-        if self.ball.location.z < 97.8:
-            ball_state = BallState(Physics(location=GSVec3(0, 0, 1200), velocity=GSVec3(0, 0, 0), angular_velocity=GSVec3(0, 0, 0)))
-            game_state = GameState(
-                ball=ball_state
-            )
-            self.set_game_state(game_state)
-        """
-
-        self.handle_matchcomms()
-
-        if self.can_shoot != None and self.time - self.can_shoot >= 3:
-            self.can_shoot = None
-
-        if self.predictions['can_shoot'] == False and self.can_shoot == None:
-            self.can_shoot = self.time + 2.75
-
-        if not self.is_clear() and self.stack[0].__class__.__name__ == "atba" and self.predictions['closest_enemy'] < 1000:
-            self.clear()
-        elif self.is_clear() and self.predictions['closest_enemy'] != None and self.predictions['closest_enemy'] > 2500 and self.ball_to_goal < 1500 and side(self.team) == sign(self.me.location.y) and abs(self.me.location.y) > 5400:
-            self.push(atba())
-        elif self.defender:
-            self.playstyle_defend()
+            self.kickoff_done = True
         else:
-            self.playstyle_attack()
 
-        if self.is_clear():
-            self.clear()
-
-            if not self.shooting:
-                if self.team == 1 and self.me.location.y > 5100:
-                    self.backcheck()
-                elif self.team == 0 and self.me.location.y < -5100:
-                    self.backcheck()
-
-        if self.is_clear():
-            self.clear()
-            self.smart_shot(
-                (self.foe_goal.left_post, self.foe_goal.right_post))
-
-        # self.dbg(f"Can shoot: { str(self.predictions['can_shoot']) }")
-        # self.dbg(f"Goal: { str(self.predictions['goal']) }")
-
-        ball_prediction = self.predictions['ball_struct']
-
-        if ball_prediction is not None:
-            skip = 10
-            for i in range(0, ball_prediction.num_slices - (ball_prediction.num_slices % skip) - skip, skip):
-                self.renderer.draw_line_3d(
-                    ball_prediction.slices[i].physics.location,
-                    ball_prediction.slices[i+skip].physics.location,
-                    self.renderer.grey()
+            """
+            # This is for state setting the ball to high up for aerial testing
+            if self.me.boost < 90:
+                car_state = CarState(boost_amount=100)
+                game_state = GameState(
+                    cars={
+                        self.index: car_state
+                    }
                 )
+                self.set_game_state(game_state)
 
-        if self.shooting and not self.shooting_short:
-            self.dbg_val(self.stack[0].intercept_time - self.time)
+            if self.ball.location.z < 97.8:
+                ball_state = BallState(Physics(location=GSVec3(0, 0, 1200), velocity=GSVec3(
+                    0, 0, 0), angular_velocity=GSVec3(0, 0, 0)))
+                game_state = GameState(
+                    ball=ball_state
+                )
+                self.set_game_state(game_state)
+            """
+
+            self.handle_matchcomms()
+
+            if self.can_shoot != None and self.time - self.can_shoot >= 3:
+                self.can_shoot = None
+
+            if self.predictions['can_shoot'] == False and self.can_shoot == None:
+                self.can_shoot = self.time + 2.75
+
+            if not self.is_clear() and self.stack[0].__class__.__name__ == "atba" and self.predictions['closest_enemy'] < 1000:
+                self.clear()
+            elif self.is_clear() and self.predictions['closest_enemy'] != None and self.predictions['closest_enemy'] > 2500 and self.ball_to_goal < 1500 and side(self.team) == sign(self.me.location.y) and abs(self.me.location.y) > 5400:
+                self.push(atba())
+            elif self.defender:
+                self.playstyle_defend()
+            else:
+                self.playstyle_attack()
+
+            if self.is_clear():
+                self.clear()
+
+                if not self.shooting:
+                    if self.team == 1 and self.me.location.y > 5100:
+                        self.backcheck()
+                    elif self.team == 0 and self.me.location.y < -5100:
+                        self.backcheck()
+
+            if self.is_clear():
+                self.clear()
+                self.smart_shot(
+                    (self.foe_goal.left_post, self.foe_goal.right_post))
+
+            ball_prediction = self.predictions['ball_struct']
+
+            if ball_prediction is not None:
+                skip = 10
+                for i in range(0, ball_prediction.num_slices - (ball_prediction.num_slices % skip) - skip, skip):
+                    self.renderer.draw_line_3d(
+                        ball_prediction.slices[i].physics.location,
+                        ball_prediction.slices[i+skip].physics.location,
+                        self.renderer.grey()
+                    )
+
+            if self.shooting and not self.shooting_short:
+                self.dbg_val(self.stack[0].intercept_time - self.time)
 
     def handle_quick_chat(self, index, team, quick_chat):
         if team != self.team and index != self.index:
@@ -237,25 +239,22 @@ class VirxEB(GoslingAgent):
             except Empty:
                 break
 
-            if msg.get("VirxEB") is not None:
+            if msg.get("VirxEB") != None and msg['VirxEB']['team'] == self.team:
                 msg = msg['VirxEB']
+                if self.defender:
+                    if msg.get("match_defender"):
+                        if msg['index'] < self.index:
+                            self.defender = False
+                            self.clear()
+                            self.goto_nearest_boost()
+                            print(f"VirxEB ({self.index}): You can defend")
+                else:
+                    if msg.get("attacking"):
+                        if msg['index'] < self.index:
+                            self.clear()
+                            self.goto_nearest_boost()
 
-                if msg['team'] == self.team:
-                    if self.defender:
-                        if msg.get("match_defender"):
-                            if msg['index'] < self.index:
-                                self.defender = False
-                                self.clear()
-                                self.goto_nearest_boost()
-                                print(
-                                    f"VirxEB ({self.index}): You can defend")
-                    else:
-                        if msg.get("attacking"):
-                            if msg['index'] < self.index:
-                                self.clear()
-                                self.goto_nearest_boost()
-
-                                print(f"VirxEB ({self.index}): All yours!")
+                            print(f"VirxEB ({self.index}): All yours!")
 
     def shoot_from(self, shot, defend=True):
         if defend and not self.shooting and not self.is_clear():
@@ -288,21 +287,20 @@ class VirxEB(GoslingAgent):
                 bc_x = 0
                 bc_y = 0
                 ball_loc = self.ball.location.y * side(not self.team)
-                self.dbg(ball_loc)
-                self.dbg(side(not self.team))
 
                 if ball_loc > 2560 * side(not self.team):
                     if self.ball.location.x > 2048:
                         bc_x = 2048
                     elif self.ball.location.x < -2048:
                         bc_x = -2048
-                
+
                 if self_is_farthest:
                     bc_y = max(1024, ball_loc - 1000) * side(not self.team)
 
                 self.push(goto(Vector3(bc_x, bc_y, 0)))
             else:
                 self.push(goto(self.friend_goal.location))
+
             return True
 
         return False
@@ -312,53 +310,64 @@ class VirxEB(GoslingAgent):
         self.push(recovery(self.friend_goal.location))
 
     def do_kickoff(self):
-        friend_distances = [Vec3(friend.location).dist(
-            Vec3(self.ball.location)) for friend in self.friends]
-        friend_distances.append(
-            Vec3(self.me.location).dist(Vec3(self.ball.location)))
-        min_distance = min(friend_distances)
-        max_distance = max(friend_distances)
+        if len(self.friends) > 0:
+            friend_distances = self.predictions['teammates_from_goal']
+            friend_distances.append(Vec3(self.me.location).dist(Vec3(self.ball.location)))
 
-        car_distance = self.me.location.dist(self.ball.location)
+            min_distance = min(friend_distances)
+            max_distance = max(friend_distances)
 
-        if min_distance - 5 < car_distance and car_distance < min_distance + 5:
-            if not self.shooting or self.shooting_short:
+            car_distance = self.me.location.dist(self.ball.location)
+
+            if min_distance - 5 < car_distance and car_distance < min_distance + 5:
+                self.offensive_kickoff()
+            elif max_distance - 5 < car_distance and car_distance < max_distance + 5:
                 self.clear()
 
-                shot = self.get_shot(
-                    (self.foe_goal.right_post, self.foe_goal.left_post))
+                self.defender = True
 
-                if shot is None or shot.intercept_time > 3:
-                    self.push(kickoff())
-                else:
-                    self.shoot_from(shot)
-
-                self.send_quick_chat(QuickChats.CHAT_TEAM_ONLY,
-                                     QuickChats.Information_IGotIt)
-
-                print(f"VirxEB ({self.index}): I got it!")
+                print(f"VirxEB ({self.index}): Defending!")
 
                 self.send_comm({
-                    "attacking": True
+                    "match_defender": True
                 })
-                self.defender = False
-        elif max_distance - 5 < car_distance and car_distance < max_distance + 5:
-            self.clear()
+                self.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_Defending)
+                self.push(goto(self.friend_goal.location, self.foe_goal.location))
+        else:
+            self.offensive_kickoff()
 
-            self.defender = True
+    def offensive_kickoff(self):
+        # note that the second value may be positive or negative
+        left = (-2048, 2056)
+        right = (2048, 2056)
+        back_right = (256, 3840)
+        back_left = (-256, 3840)
+        back = (0, 4608)
 
-            print(f"VirxEB ({self.index}): Defending!")
+        def kickoff_check(pair):
+            threshold = 50
 
-            self.send_comm({
-                "match_defender": True
-            })
-            self.send_quick_chat(QuickChats.CHAT_TEAM_ONLY,
-                                 QuickChats.Information_Defending)
-            self.push(goto(self.friend_goal.location, self.foe_goal.location))
+            if pair[0] - threshold < self.me.location.x and self.me.location.x < pair[0] + threshold and pair[1] - threshold < abs(self.me.location.y) and abs(self.me.location.y) < pair[1] + threshold:
+                return True
+
+            return False
+
+        if kickoff_check(back):
+            self.push(back_kickoff())
+        else:
+            self.push(generic_kickoff())
+
+        self.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_IGotIt)
+
+        print(f"VirxEB ({self.index}): I got it!")
+
+        self.send_comm({
+            "attacking": True
+        })
+        self.defender = False
 
     def goto_nearest_boost(self, only_small=False):
-        self.send_quick_chat(QuickChats.CHAT_TEAM_ONLY,
-                             QuickChats.Information_NeedBoost)
+        self.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_NeedBoost)
 
         if not only_small:
             large_boosts = [
@@ -366,10 +375,12 @@ class VirxEB(GoslingAgent):
 
             if len(large_boosts) > 0:
                 closest = large_boosts[0]
-                closest_distance = large_boosts[0].location.dist(self.friend_goal.location)
+                closest_distance = large_boosts[0].location.dist(
+                    self.friend_goal.location)
 
                 for item in large_boosts:
-                    item_disatance = item.location.dist(self.friend_goal.location)
+                    item_disatance = item.location.dist(
+                        self.friend_goal.location)
                     if item_disatance < closest_distance:
                         closest = item
                         closest_distance = item_disatance
@@ -377,17 +388,15 @@ class VirxEB(GoslingAgent):
                 if closest_distance < 2500:
                     self.push(goto_boost(closest, self.ball.location))
 
-        small_boosts = [
-            boost for boost in self.boosts if not boost.large and boost.active]
+        small_boosts = [boost for boost in self.boosts if not boost.large and boost.active]
 
         if len(small_boosts) > 0:
             closest = small_boosts[0]
-            closest_distance = (
-                small_boosts[0].location - self.me.location).magnitude()
+            closest_distance = (small_boosts[0].location - self.me.location).magnitude()
 
             for item in small_boosts:
-                item_distance = (
-                    item.location - self.me.location).magnitude()
+                item_distance = (item.location - self.me.location).magnitude()
+
                 if item_distance < closest_distance:
                     closest = item
                     closest_distance = item_distance

@@ -33,6 +33,7 @@ class GoslingAgent(BaseAgent):
         self.controller = SimpleControllerState()
 
         self.kickoff_flag = False
+        self.kickoff_done = False
 
         self.last_time = 0
         self.my_score = 0
@@ -65,15 +66,13 @@ class GoslingAgent(BaseAgent):
         if len(self.foes) > 0:
             self.enemy_prediction = EnemyPrediction()
         else:
-            print(
-                f"VirxEB ({self.index}: I have no foes, so I'm skipping EnemyPrediction")
+            print(f"VirxEB ({self.index}: I have no foes, so I'm skipping EnemyPrediction")
             self.enemy_prediction = None
 
         if len(self.friends) > 0:
             self.teammate_prediction = TeammatePrediction()
         else:
-            print(
-                f"VirxEB ({self.index}): I have no friends, so I'm skipping TeammatePrediction")
+            print(f"VirxEB ({self.index}): I have no friends, so I'm skipping TeammatePrediction")
             self.teammate_prediction = None
 
         self.ball_prediction = BallPrediction()
@@ -97,8 +96,7 @@ class GoslingAgent(BaseAgent):
 
     def line(self, start, end, color=None):
         color = color if color != None else [255, 255, 255]
-        self.renderer.draw_line_3d(
-            start, end, self.renderer.create_color(255, *color))
+        self.renderer.draw_line_3d(start, end, self.renderer.create_color(255, *color))
 
     def debug_stack(self):
         # Draws the stack on the screen
@@ -113,8 +111,8 @@ class GoslingAgent(BaseAgent):
         self.debug[0] = []
 
     def debug_2d(self):
-        self.renderer.draw_string_2d(300, 300, 2, 2, "\n".join(
-            self.debug[1]), self.renderer.team_color(alt_color=True))
+        if len(self.friends) == 0 or len(self.foes) < 1:
+            self.renderer.draw_string_2d(20, 300, 2, 2, "\n".join(self.debug[1]), self.renderer.team_color(alt_color=True))
         self.debug[1] = []
 
     def clear(self):
@@ -140,7 +138,9 @@ class GoslingAgent(BaseAgent):
         self.game.update(packet)
         self.time = packet.game_info.seconds_elapsed
         # When a new kickoff begins we empty the stack
-        if self.kickoff_flag == False and (not self.shooting or self.shooting_short) and packet.game_info.is_round_active and packet.game_info.is_kickoff_pause:
+        #  and (not self.shooting or self.shooting_short)
+        if self.kickoff_flag == False and packet.game_info.is_round_active and packet.game_info.is_kickoff_pause:
+            self.kickoff_done = False
             self.clear()
         # Tells us when to go for kickoff
         self.kickoff_flag = packet.game_info.is_round_active and packet.game_info.is_kickoff_pause

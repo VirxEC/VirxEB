@@ -1,5 +1,3 @@
-from rlbot.utils.structures.quick_chats import QuickChats
-
 from util.utils import (Vector3, backsolve, cap, defaultPD, defaultThrottle,
                         shot_valid, side, sign)
 
@@ -326,17 +324,13 @@ class goto():
         car_to_target = self.target - agent.me.location
         distance_remaining = car_to_target.flatten().magnitude()
 
-        agent.line(self.target - Vector3(0, 0, 500),
-                   self.target + Vector3(0, 0, 500), [255, 0, 255])
+        agent.line(self.target - Vector3(0, 0, 500), self.target + Vector3(0, 0, 500), [255, 0, 255])
 
-        if self.vector is not None:
+        if self.vector != None:
             # See commends for adjustment in jump_shot or aerial for explanation
-            side_of_vector = sign(self.vector.cross(
-                (0, 0, 1)).dot(car_to_target))
-            car_to_target_perp = car_to_target.cross(
-                (0, 0, side_of_vector)).normalize()
-            adjustment = car_to_target.angle(
-                self.vector) * distance_remaining / 3.14
+            side_of_vector = sign(self.vector.cross((0, 0, 1)).dot(car_to_target))
+            car_to_target_perp = car_to_target.cross((0, 0, side_of_vector)).normalize()
+            adjustment = car_to_target.angle(self.vector) * distance_remaining / 3.14
             final_target = self.target + (car_to_target_perp * adjustment)
         else:
             final_target = self.target
@@ -348,22 +342,18 @@ class goto():
         local_target = agent.me.local(final_target - agent.me.location)
 
         angles = defaultPD(agent, local_target, self.direction)
-        speed = 2300 if distance_remaining > 500 else 300
-        defaultThrottle(agent, speed, self.direction)
+        defaultThrottle(agent, 2300, self.direction)
 
         agent.controller.boost = False
-        agent.controller.handbrake = True if abs(
-            angles[1]) > 2.3 else agent.controller.handbrake
+        agent.controller.handbrake = True if abs(angles[1]) > 2.3 else agent.controller.handbrake
 
         velocity = 1+agent.me.velocity.magnitude()
         if distance_remaining < 500:
-            agent.send_quick_chat(QuickChats.CHAT_TEAM_ONLY,
-                                  QuickChats.Information_InPosition)
             agent.pop()
         elif abs(angles[1]) < 0.05 and velocity > 600 and velocity < 2150 and distance_remaining / velocity > 2.0:
             agent.push(flip(local_target))
         elif abs(angles[1]) > 2.8 and velocity < 200:
-            agent.push(wave_dash())
+            agent.push(flip(local_target, True))
         elif agent.me.airborne:
             agent.push(recovery(self.target))
 
@@ -544,22 +534,43 @@ class jump_shot():
                 agent.controller.yaw = self.y if abs(self.y) > 0.3 else 0
 
 
-class kickoff():
+class generic_kickoff():
     def run(self, agent):
         target = agent.ball.location + Vector3(0, 200*side(agent.team), 0)
         local_target = agent.me.local(target - agent.me.location)
-        distance_to_target = local_target.magnitude()
-        agent.dbg_val(distance_to_target)
 
         defaultPD(agent, local_target)
         defaultThrottle(agent, 2300)
 
-        if distance_to_target < 400:
+        if local_target.magnitude() < 650:
             agent.pop()
-            agent.push(
-                flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
-        # elif distance_to_target > 3200:
-        #     agent.push(wave_dash())
+            agent.push(flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
+
+
+class back_kickoff():
+    def __init__(self):
+        self.wave_dash = False
+        self.start_time = None
+
+    def run(self, agent):
+        if self.start_time == None:
+            self.start_time = agent.time
+
+        time_elapsed = agent.time - self.start_time
+
+        if not self.wave_dash and time_elapsed > 0.5:
+            self.wave_dash = True
+            agent.push(wave_dash())
+
+        target = agent.ball.location + Vector3(0, 200*side(agent.team), 0)
+        local_target = agent.me.local(target - agent.me.location)
+
+        defaultPD(agent, local_target)
+        defaultThrottle(agent, 2300)
+
+        if local_target.magnitude() < 650:
+            agent.pop()
+            agent.push(flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
 
 
 class recovery():
