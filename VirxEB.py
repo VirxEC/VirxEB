@@ -5,9 +5,8 @@ from queue import Empty
 from rlbot.utils.structures.quick_chats import QuickChats
 
 from util.objects import GoslingAgent, Vector3
-from util.routines import goto, goto_boost, generic_kickoff, recovery, short_shot, atba, back_kickoff
+from util.routines import goto, goto_boost, generic_kickoff, recovery, short_shot, atba, back_kickoff, corner_kickoff
 from util.tools import find_hits, find_risky_hits
-from util.vec import Vec3
 from util.utils import side, sign
 
 
@@ -39,7 +38,6 @@ class VirxEB(GoslingAgent):
             if self.is_clear():
                 self.do_kickoff()
         else:
-
             """
             # This is for state setting the ball to high up for aerial testing
             if self.ball.location.z < 98:
@@ -108,7 +106,7 @@ class VirxEB(GoslingAgent):
         return False
 
     def panic_at(self, far_panic, close_panic):
-        if self.ball_to_goal < far_panic or self.predictions['goal']:
+        if self.ball_to_goal < far_panic or self.predictions['own_goal']:
             for d_shot in self.defensive_shots:
                 self.line(*d_shot, color=(255, 0, 0))
 
@@ -168,30 +166,39 @@ class VirxEB(GoslingAgent):
         if not self.is_clear():
             method_name = self.stack[0].__class__.__name__
 
-        if not self.shooting and (self.is_clear() or method_name == "goto" or self.shooting_short):
-            if self.me.airborne and not method_name == "goto" or self.shooting_short:
+        if not self.shooting and (self.is_clear() or method_name == "goto" or method_name == "atba" or self.shooting_short):
+            if self.me.airborne and self.is_clear():
                 self.recover_from_air()
             else:
                 for o_shot in self.offensive_shots:
                     self.line(*o_shot)
 
-                found_shot = False
+                if self.predictions['goal'] == True or (self.foe_goal.location.dist(self.ball.location) <= 1500 and (self.predictions['closest_enemy'] > 1500 or self.foe_goal.location.dist(self.me.location) < self.predictions['closest_enemy'] + 250)):
+                    shot = self.get_shot(self.offensive_shots[0])
 
-                if self.can_shoot == None:
-                    for o_shot in self.offensive_shots:
-                        shot = self.get_shot(o_shot)
-                        if shot != None:
-                            self.clear()
-                            self.shoot_from(shot, defend=False)
-                            found_shot = True
+                    if shot != None:
+                        self.clear()
+                        self.shoot_from(shot, defend=False)
+                    elif self.is_clear():
+                        self.push(atba())
+                elif not method_name == "atba":
+                    found_shot = False
 
-                if not found_shot and not method_name == "goto":
-                    if self.me.boost < 36 and self.ball.latest_touched_team == self.team:
-                        self.goto_nearest_boost()
-                    elif self.me.boost < 50 and self.ball.latest_touched_team == self.team:
-                        self.goto_nearest_boost(only_small=True)
-                    elif not self.backcheck() and self.me.boost < 50:
-                        self.goto_nearest_boost(only_small=True)
+                    if self.can_shoot == None:
+                        for o_shot in self.offensive_shots:
+                            shot = self.get_shot(o_shot)
+                            if shot != None:
+                                self.clear()
+                                self.shoot_from(shot, defend=False)
+                                found_shot = True
+
+                    if not found_shot and not method_name == "goto":
+                        if self.me.boost < 36 and self.ball.latest_touched_team == self.team:
+                            self.goto_nearest_boost()
+                        elif self.me.boost < 50 and self.ball.latest_touched_team == self.team:
+                            self.goto_nearest_boost(only_small=True)
+                        elif not self.backcheck() and self.me.boost < 50:
+                            self.goto_nearest_boost(only_small=True)
 
     def get_shot(self, target, cap=6):
         shots = []
@@ -298,7 +305,7 @@ class VirxEB(GoslingAgent):
     def do_kickoff(self):
         if len(self.friends) > 0:
             friend_distances = self.predictions['teammates_from_goal']
-            friend_distances.append(Vec3(self.me.location).dist(Vec3(self.ball.location)))
+            friend_distances.append(self.me.location.dist(self.ball.location))
 
             min_distance = min(friend_distances)
             max_distance = max(friend_distances)
@@ -339,8 +346,12 @@ class VirxEB(GoslingAgent):
 
         if kickoff_check(back):
             self.push(back_kickoff())
+        elif kickoff_check(right) or kickoff_check(left):
+            self.push(corner_kickoff())
         else:
             self.push(generic_kickoff())
+
+        self.kickoff_done = True
 
         self.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_IGotIt)
 

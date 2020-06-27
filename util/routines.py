@@ -19,7 +19,7 @@ class atba():
         defaultPD(agent, local_target)
         defaultThrottle(agent, 2300)
 
-        if agent.me.location.dist(agent.ball.location) < 650:
+        if agent.me.location.dist(agent.ball.location) < 610:
             agent.pop()
             agent.push(flip(local_target))
 
@@ -541,10 +541,44 @@ class generic_kickoff():
         defaultPD(agent, local_target)
         defaultThrottle(agent, 2300)
 
-        if local_target.magnitude() < 650:
-            agent.pop()
-            agent.kickoff_done = True
-            agent.push(flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
+        distance = local_target.magnitude()
+
+        if distance < 650:
+            if len(agent.foes) > 0 and agent.predictions['closest_enemy'] > 1000:
+                if distance < 100 or distance > 700:
+                    agent.pop()
+                    agent.kickoff_done = True
+
+                defaultPD(agent, local_target)
+                defaultThrottle(agent, 2300)
+            else:
+                agent.pop()
+                agent.kickoff_done = True
+                agent.push(flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
+
+
+class corner_kickoff():
+    def run(self, agent):
+        target = agent.ball.location + Vector3(0, 200*side(agent.team), 0)
+        local_target = agent.me.local(target - agent.me.location)
+
+        defaultPD(agent, local_target)
+        defaultThrottle(agent, 2300)
+
+        distance = local_target.magnitude()
+
+        if distance < 450:
+            if len(agent.foes) > 0 and agent.predictions['closest_enemy'] > 1000:
+                if distance < 100 or distance > 500:
+                    agent.pop()
+                    agent.kickoff_done = True
+
+                defaultPD(agent, local_target)
+                defaultThrottle(agent, 2300)
+            else:
+                agent.pop()
+                agent.kickoff_done = True
+                agent.push(flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
 
 
 class back_kickoff():
@@ -559,7 +593,7 @@ class back_kickoff():
         if not self.wave_dash:
             time_elapsed = agent.time - self.start_time
 
-            if time_elapsed > 0.5:
+            if time_elapsed > 0.75:
                 self.wave_dash = True
                 agent.push(wave_dash())
 
@@ -569,10 +603,20 @@ class back_kickoff():
         defaultPD(agent, local_target)
         defaultThrottle(agent, 2300)
 
-        if local_target.magnitude() < 650:
-            agent.pop()
-            agent.kickoff_done = True
-            agent.push(flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
+        distance = local_target.magnitude()
+
+        if distance < 650:
+            if len(agent.foes) > 0 and agent.predictions['closest_enemy'] > 1000:
+                if distance < 100 or distance > 700:
+                    agent.pop()
+                    agent.kickoff_done = True
+
+                defaultPD(agent, local_target)
+                defaultThrottle(agent, 2300)
+            else:
+                agent.pop()
+                agent.kickoff_done = True
+                agent.push(flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
 
 
 class recovery():

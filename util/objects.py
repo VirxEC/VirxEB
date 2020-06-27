@@ -148,26 +148,29 @@ class GoslingAgent(BaseAgent):
         self.kickoff_flag = packet.game_info.is_round_active and packet.game_info.is_kickoff_pause
         self.ball_to_goal = int(self.friend_goal.location.dist(self.ball.location))
 
-        if self.odd_tick and packet.game_info.is_round_active:
-            agent_copy = {
-                "ball": deepcopy(self.ball),
-                "foes": deepcopy(self.foes),
-                "ball_to_goal": copy(self.ball_to_goal),
-                "ball_struct": self.get_ball_prediction_struct(),
-                "team": copy(self.team),
-                "me": deepcopy(self.me),
-                "friends": deepcopy(self.friends)
-            }
+        try:
+            if self.odd_tick:  # and packet.game_info.is_round_active <- THIS CAUSES A CRASH FOR SOME REASON
+                agent_copy = {
+                    "ball": deepcopy(self.ball),
+                    "foes": deepcopy(self.foes),
+                    "ball_to_goal": copy(self.ball_to_goal),
+                    "ball_struct": self.get_ball_prediction_struct(),
+                    "team": copy(self.team),
+                    "me": deepcopy(self.me),
+                    "friends": deepcopy(self.friends)
+                }
 
-            if self.enemy_prediction != None:
-                self.enemy_prediction.add_agent(agent_copy)
+                if self.enemy_prediction != None:
+                    self.enemy_prediction.add_agent(agent_copy)
 
-            if self.teammate_prediction != None:
-                self.teammate_prediction.add_agent(agent_copy)
+                if self.teammate_prediction != None:
+                    self.teammate_prediction.add_agent(agent_copy)
 
-            self.ball_prediction.add_agent(agent_copy)
+                self.ball_prediction.add_agent(agent_copy)
 
-            self.predictions = get_predictions()
+                self.predictions = get_predictions()
+        except Exception as err:
+            print(err)
 
         self.odd_tick = not self.odd_tick
 
