@@ -1,31 +1,55 @@
-from rlbot.utils.structures.quick_chats import QuickChats
-
 from util.utils import (Vector3, backsolve, cap, defaultPD, defaultThrottle,
                         shot_valid, side, sign)
+
+import math
+
+max_speed = 2300
+boost_accel = 1060
+throttle_accel = 2/3 * 100
+boost_per_second = 30
+gravity = Vector3(0, 0, -650)
+jump_max_duration = 0.2
+jump_speed = 291 + (2/3)
+jump_acc = 1458 + (2/3)
+
+
+class atba():
+    def run(self, agent):
+        local_target = agent.me.local(agent.ball.location - agent.me.location)
+        defaultPD(agent, local_target)
+        defaultThrottle(agent, 2300)
+
+        if agent.me.location.dist(agent.ball.location) < 610:
+            agent.pop()
+            agent.push(flip(local_target))
 
 
 class wave_dash():
     # This is a straight-line only version of flip()
     # TODO - Refine jumping
-    # TODO - Add boost option so wave dashing is faster than a front flip
     def __init__(self, boost=False):
         self.step = 0
         self.boost = boost
 
     def run(self, agent):
-        if agent.me.velocity.flatten().magnitude() > 100:
-            target = agent.me.velocity.flatten().normalize() * 100 + Vector3(0, 0, 50)
-        else:
-            target = agent.me.forward.flatten() * 100 + Vector3(0, 0, 50)
+        # if agent.me.velocity.flatten().magnitude() > 100:
+        #     target = agent.me.velocity.flatten().normalize() * 100 + Vector3(0, 0, 50)
+        # else:
+        #     target = agent.me.forward.flatten() * 100 + Vector3(0, 0, 50)
 
-        local_target = agent.me.local(target)
-        defaultPD(agent, local_target)
+        # local_target = agent.me.local(target)
+        # defaultPD(agent, local_target)
 
-        self.step += 1
+        if self.step <= 5:
+            self.step += 1
+            agent.controller.pitch = 1
+            agent.controller.yaw = agent.controller.role = 0
 
-        if self.step < 5:
+        if self.step == 0:
+            pass
+        elif self.step < 3:
             agent.controller.jump = True
-        elif self.step < 8:
+        elif self.step < 4:
             agent.controller.jump = False
         else:
             if (agent.me.location + (agent.me.velocity * 0.2)).z < 5:
@@ -35,6 +59,121 @@ class wave_dash():
                 agent.pop()
             elif not agent.me.airborne:
                 agent.pop()
+
+
+class Aerial():
+    def __init__(self, ball_location, intercept_time, on_ground, target=None):
+        self.ball_location = ball_location
+        self.intercept_time = intercept_time
+        self.target = target
+        self.jumping = on_ground
+        self.time = -1
+        self.jump_time = -1
+        self.counter = 0
+
+    def run(self, agent):
+        agent.shooting = True
+
+        if self.time == -1:
+            elapsed = 0
+            self.time = agent.time
+        else:
+            elapsed = agent.time - self.time
+
+        T = self.intercept_time - agent.time
+        xf = agent.me.location + agent.me.velocity * T + 0.5 * gravity * T ** 2
+        vf = agent.me.velocity + gravity * T
+        if self.jumping:
+            if self.jump_time == -1:
+                jump_elapsed = 0
+                self.jump_time = agent.time
+            else:
+                jump_elapsed = agent.time - self.jump_time
+
+            tau = jump_max_duration - jump_elapsed
+
+            if jump_elapsed == 0:
+                vf += agent.me.up * jump_speed
+                xf += agent.me.up * jump_speed * T
+
+            vf += agent.me.up * jump_acc * tau
+            xf += agent.me.up * jump_acc * tau * (T - 0.5 * tau)
+
+            vf += agent.me.up * jump_speed
+            xf += agent.me.up * jump_speed * (T - tau)
+
+            if jump_elapsed < jump_max_duration:
+                agent.controller.jump = True
+            elif elapsed >= jump_max_duration and self.counter < 3:
+                agent.controller.jump = False
+                self.counter += 1
+            elif elapsed < 0.3:
+                agent.controller.jump = True
+            else:
+                self.jumping = jump_elapsed <= 0.3  # jump_max_duration
+        else:
+            agent.controller.jump = False
+
+        delta_x = agent.ball.location - xf
+        direction = delta_x.normalize()
+        if delta_x.magnitude() > 50:
+            defaultPD(agent, agent.me.local(delta_x))
+        else:
+            if self.target != None:
+                defaultPD(agent, agent.me.local(self.target))
+            else:
+                defaultPD(agent, agent.me.local(
+                    self.ball_location - agent.me.location))
+
+        if jump_max_duration <= elapsed < 0.3 and self.counter ** 3:
+            agent.controller.roll = 0
+            agent.controller.pitch = 0
+            agent.controller.yaw = 0
+            agent.controller.steer = 0
+
+        if agent.me.forward.angle3D(direction) < 0.3:
+            if delta_x.magnitude() > 50:
+                agent.controller.boost = 1
+                agent.controller.throttle = 0
+            else:
+                agent.controller.boost = 0
+                agent.controller.throttle = cap(
+                    0.5 * throttle_accel * T ** 2, 0, 1)
+        else:
+            agent.controller.boost = 0
+            agent.controller.throttle = 0
+
+        if T <= 0:  # or not shot_valid(agent, self, threshold=150):
+            agent.pop()
+            agent.shooting = False
+            agent.push(recovery(agent.friend_goal.location))
+
+    def is_viable(self, car, time):
+        T = self.intercept_time - time
+        xf = car.location + car.velocity * T + 0.5 * gravity * T * T
+        vf = car.velocity + gravity * T
+
+        if not car.airborne:
+            vf += car.up * (2 * jump_speed + jump_acc * jump_max_duration)
+            xf += car.up * (jump_speed * (2 * T - jump_max_duration) + jump_acc * (
+                T * jump_max_duration - 0.5 * jump_max_duration ** 2))
+
+        delta_x = self.ball_location - xf
+        f = delta_x.normalize()
+        phi = f.angle3D(car.forward)
+        turn_time = 0.7 * (2 * math.sqrt(phi / 9))
+
+        tau1 = turn_time * cap(1 - 0.3 / phi, 0, 1)
+        required_acc = (2 * delta_x.normalize(True)
+                        [1]) / ((T - tau1) * (T - tau1))
+        ratio = required_acc / boost_accel
+        tau2 = T - (T - tau1) * math.sqrt(1 - cap(ratio, 0, 1))
+        velocity_estimate = vf + boost_accel * (tau2 - tau1) * f
+        boost_estimate = (tau2 - tau1) * 30
+        enough_boost = boost_estimate < 0.95 * car.boost
+        enough_time = abs(ratio) < 0.9
+        enough_speed = velocity_estimate.normalize(True)[1] < 0.9 * max_speed
+        return enough_speed and enough_boost and enough_time
 
 
 class aerial_shot():
@@ -143,7 +282,6 @@ class aerial_shot():
 class flip():
     # Flip takes a vector in local coordinates and flips/dodges in that direction
     # cancel causes the flip to cancel halfway through, which can be used to half-flip
-    # TODO - Front and forwards flip detection, so we know to boost through the whole thing.
     def __init__(self, vector, cancel=False):
         self.vector = vector.normalize()
         self.pitch = abs(self.vector[0]) * -sign(self.vector[0])
@@ -153,8 +291,6 @@ class flip():
         self.time = -1
         # keeps track of the frames the jump button has been released
         self.counter = 0
-        self.stop_boost_time = 0
-        self.stop_boost = False
 
     def run(self, agent):
         if self.time == -1:
@@ -162,28 +298,16 @@ class flip():
             self.time = agent.time
         else:
             elapsed = agent.time - self.time
-
-        if not self.cancel:
-            agent.controller.boost = True
-
-        if self.stop_boost and agent.time - self.stop_boost_time >= 0.1:
-            agent.controller.boost = False
-
-        if elapsed < 0.05:
+        if elapsed < 0.15:
             agent.controller.jump = True
-        elif elapsed >= 0.05 and self.counter < 3:
+        elif elapsed >= 0.15 and self.counter < 3:
             agent.controller.jump = False
             self.counter += 1
         elif elapsed < 0.3 or (not self.cancel and elapsed < 0.9):
-            if not self.stop_boost:
-                self.stop_boost = True
-                self.stop_boost_time = agent.time
-
             agent.controller.jump = True
             agent.controller.pitch = self.pitch
             agent.controller.yaw = self.yaw
         else:
-            agent.controller.boost = False
             agent.pop()
             agent.push(recovery())
 
@@ -201,17 +325,13 @@ class goto():
         car_to_target = self.target - agent.me.location
         distance_remaining = car_to_target.flatten().magnitude()
 
-        agent.line(self.target - Vector3(0, 0, 500),
-                   self.target + Vector3(0, 0, 500), [255, 0, 255])
+        agent.line(self.target - Vector3(0, 0, 500), self.target + Vector3(0, 0, 500), [255, 0, 255])
 
-        if self.vector is not None:
+        if self.vector != None:
             # See commends for adjustment in jump_shot or aerial for explanation
-            side_of_vector = sign(self.vector.cross(
-                (0, 0, 1)).dot(car_to_target))
-            car_to_target_perp = car_to_target.cross(
-                (0, 0, side_of_vector)).normalize()
-            adjustment = car_to_target.angle(
-                self.vector) * distance_remaining / 3.14
+            side_of_vector = sign(self.vector.cross((0, 0, 1)).dot(car_to_target))
+            car_to_target_perp = car_to_target.cross((0, 0, side_of_vector)).normalize()
+            adjustment = car_to_target.angle(self.vector) * distance_remaining / 3.14
             final_target = self.target + (car_to_target_perp * adjustment)
         else:
             final_target = self.target
@@ -223,17 +343,13 @@ class goto():
         local_target = agent.me.local(final_target - agent.me.location)
 
         angles = defaultPD(agent, local_target, self.direction)
-        speed = 2300 if distance_remaining > 500 else 300
-        defaultThrottle(agent, speed, self.direction)
+        defaultThrottle(agent, 2300, self.direction)
 
         agent.controller.boost = False
-        agent.controller.handbrake = True if abs(
-            angles[1]) > 2.3 else agent.controller.handbrake
+        agent.controller.handbrake = True if abs(angles[1]) > 2.3 else agent.controller.handbrake
 
         velocity = 1+agent.me.velocity.magnitude()
-        if distance_remaining < 350:
-            agent.send_quick_chat(QuickChats.CHAT_EVERYONE,
-                                  QuickChats.Information_InPosition)
+        if distance_remaining < 500:
             agent.pop()
         elif abs(angles[1]) < 0.05 and velocity > 600 and velocity < 2150 and distance_remaining / velocity > 2.0:
             agent.push(flip(local_target))
@@ -258,8 +374,7 @@ class goto_boost():
         car_to_boost = self.boost.location - agent.me.location
         distance_remaining = car_to_boost.flatten().magnitude()
 
-        agent.line(self.boost.location - Vector3(0, 0, 500),
-                   self.boost.location + Vector3(0, 0, 500), [0, 255, 0])
+        agent.line(self.boost.location - Vector3(0, 0, 500), self.boost.location + Vector3(0, 0, 500), [0, 255, 0])
 
         if self.target != None:
             vector = (self.target - self.boost.location).normalize()
@@ -267,8 +382,7 @@ class goto_boost():
             car_to_boost_perp = car_to_boost.cross(
                 (0, 0, side_of_vector)).normalize()
             adjustment = car_to_boost.angle(vector) * distance_remaining / 3.14
-            final_target = self.boost.location + \
-                (car_to_boost_perp * adjustment)
+            final_target = self.boost.location + (car_to_boost_perp * adjustment)
             car_to_target = (self.target - agent.me.location).magnitude()
         else:
             adjustment = 9999
@@ -296,14 +410,14 @@ class goto_boost():
             agent.push(recovery(self.target))
         elif abs(angles[1]) < 0.05 and velocity > 600 and velocity < 2150 and (distance_remaining / velocity > 2.0 or (adjustment < 90 and car_to_target/velocity > 2.0)):
             agent.push(flip(local_target))
-        elif agent.time - self.start_time > 3:
+        elif agent.time - self.start_time > 6 and not agent.stack[-1].__class__.__name__ == "flip":
             agent.pop()
 
 
 class jump_shot():
     # Hits a target point at a target time towards a target direction
     # Target must be no higher than 300uu unless you're feeling lucky
-    #TODO - speed
+    # TODO - speed
     def __init__(self, ball_location, intercept_time, shot_vector, ratio, direction=1, speed=2300):
         self.ball_location = ball_location
         self.intercept_time = intercept_time
@@ -320,7 +434,7 @@ class jump_shot():
         self.speed_desired = speed
         # controls how soon car will jump based on acceleration required. max 584
         # bigger = later, which allows more time to align with shot vector
-        #smaller = sooner
+        # smaller = sooner
         self.jump_threshold = 400
         # Flags for what part of the routine we are in
         self.jumping = False
@@ -419,22 +533,90 @@ class jump_shot():
                 agent.controller.yaw = self.y if abs(self.y) > 0.3 else 0
 
 
-class kickoff():
+class generic_kickoff():
     def run(self, agent):
         target = agent.ball.location + Vector3(0, 200*side(agent.team), 0)
         local_target = agent.me.local(target - agent.me.location)
-        distance_to_target = local_target.magnitude()
-        agent.dbg_val(distance_to_target)
 
         defaultPD(agent, local_target)
         defaultThrottle(agent, 2300)
 
-        if distance_to_target < 400:
-            agent.pop()
-            agent.push(
-                flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
-        # elif distance_to_target > 3200:
-        #     agent.push(wave_dash())
+        distance = local_target.magnitude()
+
+        if distance < 650:
+            if len(agent.foes) > 0 and agent.predictions['closest_enemy'] > 1000:
+                if distance < 100 or distance > 700:
+                    agent.pop()
+                    agent.kickoff_done = True
+
+                defaultPD(agent, local_target)
+                defaultThrottle(agent, 2300)
+            else:
+                agent.pop()
+                agent.kickoff_done = True
+                agent.push(flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
+
+
+class corner_kickoff():
+    def run(self, agent):
+        target = agent.ball.location + Vector3(0, 200*side(agent.team), 0)
+        local_target = agent.me.local(target - agent.me.location)
+
+        defaultPD(agent, local_target)
+        defaultThrottle(agent, 2300)
+
+        distance = local_target.magnitude()
+
+        if distance < 450:
+            if len(agent.foes) > 0 and agent.predictions['closest_enemy'] > 1000:
+                if distance < 100 or distance > 500:
+                    agent.pop()
+                    agent.kickoff_done = True
+
+                defaultPD(agent, local_target)
+                defaultThrottle(agent, 2300)
+            else:
+                agent.pop()
+                agent.kickoff_done = True
+                agent.push(flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
+
+
+class back_kickoff():
+    def __init__(self):
+        self.wave_dash = False
+        self.start_time = None
+
+    def run(self, agent):
+        if self.start_time == None:
+            self.start_time = agent.time
+
+        if not self.wave_dash:
+            time_elapsed = agent.time - self.start_time
+
+            if time_elapsed > 0.75:
+                self.wave_dash = True
+                agent.push(wave_dash())
+
+        target = agent.ball.location + Vector3(0, 200*side(agent.team), 0)
+        local_target = agent.me.local(target - agent.me.location)
+
+        defaultPD(agent, local_target)
+        defaultThrottle(agent, 2300)
+
+        distance = local_target.magnitude()
+
+        if distance < 650:
+            if len(agent.foes) > 0 and agent.predictions['closest_enemy'] > 1000:
+                if distance < 100 or distance > 700:
+                    agent.pop()
+                    agent.kickoff_done = True
+
+                defaultPD(agent, local_target)
+                defaultThrottle(agent, 2300)
+            else:
+                agent.pop()
+                agent.kickoff_done = True
+                agent.push(flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
 
 
 class recovery():
@@ -466,12 +648,11 @@ class short_shot():
     def run(self, agent):
         agent.shooting = True
         agent.shooting_short = True
-        
+
         if self.start_time == None:
             self.start_time = agent.time
-        
-        car_to_ball, distance = (
-            agent.ball.location - agent.me.location).normalize(True)
+
+        car_to_ball, distance = (agent.ball.location - agent.me.location).normalize(True)
         ball_to_target = (self.target - agent.ball.location).normalize()
 
         relative_velocity = car_to_ball.dot(

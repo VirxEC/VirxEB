@@ -1,8 +1,30 @@
 import math
 
 
+# This is a helper class for vector math. You can extend it or delete if you want.
 class Vec3:
+    """
+    This class should provide you with all the basic vector operations that you need, but feel free to extend its
+    functionality when needed.
+    The vectors found in the GameTickPacket will be flatbuffer vectors. Cast them to Vec3 like this:
+    `car_location = Vec3(car.physics.location)`.
+
+    Remember that the in-game axis are left-handed.
+
+    When in doubt visit the wiki: https://github.com/RLBot/RLBot/wiki/Useful-Game-Values
+    """
+
     def __init__(self, x: float or 'Vec3'=0, y: float=0, z: float=0):
+        """
+        Create a new Vec3. The x component can alternatively be another vector with an x, y, and z component, in which
+        case the created vector is a copy of the given vector and the y and z parameter is ignored. Examples:
+
+        a = Vec3(1, 2, 3)
+
+        b = Vec3(a)
+
+        """
+
         if hasattr(x, 'x'):
             # We have been given a vector. Copy it
             self.x = float(x.x)

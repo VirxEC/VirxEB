@@ -1,6 +1,7 @@
 import math
 from threading import Thread
 from time import sleep
+from copy import copy, deepcopy
 
 import rlbot.utils.structures.game_data_struct as game_data_struct
 from rlbot.agents.base_agent import BaseAgent, SimpleControllerState
@@ -8,18 +9,15 @@ from rlbot_action_server.bot_action_broker import (BotActionBroker,
                                                    find_usable_port,
                                                    run_action_server)
 from rlbot_action_server.bot_holder import set_bot_action_broker
-from rlbot_action_server.models import (ActionChoice, ApiResponse,
-                                        AvailableActions, BotAction)
+from rlbot_action_server.models import ActionChoice, ApiResponse
 from rlbot_twitch_broker_client import (ActionServerRegistration, ApiClient,
                                         Configuration)
 from rlbot_twitch_broker_client.api.register_api import RegisterApi
 from rlbot_twitch_broker_client.defaults import STANDARD_TWITCH_BROKER_PORT
 from urllib3.exceptions import MaxRetryError
 
-from util.vec import Vec3
-
-# This file holds all of the objects used in gosling utils
-# Includes custom vector and matrix objects
+from util.interface import get_predictions
+from util.prediction import BallPrediction, EnemyPrediction, TeammatePrediction
 
 
 class MyActionBroker(BotActionBroker):
@@ -62,6 +60,7 @@ class GoslingAgent(BaseAgent):
         self.controller = SimpleControllerState()
 
         self.kickoff_flag = False
+        self.kickoff_done = False
 
         self.last_time = 0
         self.my_score = 0
@@ -72,7 +71,9 @@ class GoslingAgent(BaseAgent):
         self.shooting = False
         self.shooting_short = False
         self.panic = False
-        self.backchecking = False
+
+        # Use this for things that only need to be run every other tick
+        self.odd_tick = False
 
         self.debug = [[], []]
         self.debugging = False
@@ -83,6 +84,18 @@ class GoslingAgent(BaseAgent):
 
         Thread(target=self.stay_connected_to_twitch_broker, args=(port,), daemon=True).start()
 
+    def stay_connected_to_twitch_broker(self, port):
+        register_api_config = Configuration()
+        register_api_config.host = f"http://127.0.0.1:{STANDARD_TWITCH_BROKER_PORT}"
+        twitch_broker_register = RegisterApi(ApiClient(configuration=register_api_config))
+        while True:
+            try:
+                twitch_broker_register.register_action_server(
+                    ActionServerRegistration(base_url=f"http://127.0.0.1:{port}"))
+            except MaxRetryError:
+                self.logger.warning('Failed to register with twitch broker, will try again...')
+            sleep(10)
+
     def get_ready(self, packet):
         field_info = self.get_field_info()
         for i in range(field_info.num_boosts):
@@ -92,16 +105,31 @@ class GoslingAgent(BaseAgent):
         self.refresh_player_lists(packet)
         self.ball.update(packet)
 
+        print(f"VirxEB ({self.index}): Setting up predictive services...")
+        self.predictions = get_predictions()
+
+        if len(self.foes) > 0:
+            self.enemy_prediction = EnemyPrediction()
+        else:
+            print(f"VirxEB ({self.index}: I have no foes, so I'm skipping EnemyPrediction")
+            self.enemy_prediction = None
+
+        if len(self.friends) > 0:
+            self.teammate_prediction = TeammatePrediction()
+        else:
+            print(f"VirxEB ({self.index}): I have no friends, so I'm skipping TeammatePrediction")
+            self.teammate_prediction = None
+
+        self.ball_prediction = BallPrediction()
+
         self.init()
 
         self.ready = True
 
     def refresh_player_lists(self, packet):
         # Useful to keep separate from get_ready because humans can join/leave a match
-        self.friends = [car_object(i, packet) for i in range(
-            packet.num_cars) if packet.game_cars[i].team == self.team and i != self.index]
-        self.foes = [car_object(i, packet) for i in range(
-            packet.num_cars) if packet.game_cars[i].team != self.team]
+        self.friends = [car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team == self.team and i != self.index]
+        self.foes = [car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team != self.team]
 
     def push(self, routine):
         self.stack.append(routine)
@@ -111,8 +139,7 @@ class GoslingAgent(BaseAgent):
 
     def line(self, start, end, color=None):
         color = color if color != None else [255, 255, 255]
-        self.renderer.draw_line_3d(
-            start, end, self.renderer.create_color(255, *color))
+        self.renderer.draw_line_3d(start, end, self.renderer.create_color(255, *color))
 
     def debug_stack(self):
         # Draws the stack on the screen
@@ -121,21 +148,18 @@ class GoslingAgent(BaseAgent):
         for i in range(len(self.stack)-1, -1, -1):
             self.debug[0].append(self.stack[i].__class__.__name__)
 
-        self.renderer.draw_string_3d(
-            self.me.location, 1, 1, "\n".join(self.debug[0]), self.renderer.team_color())
+        self.renderer.draw_string_3d(self.me.location, 2, 2, "\n".join(self.debug[0]), self.renderer.team_color(alt_color=True))
 
         self.debug[0] = []
 
     def debug_2d(self):
-        self.renderer.draw_string_2d(100, 100, 1, 1, "\n".join(
-            self.debug[1]), self.renderer.green())
+        if len(self.friends) == 0 and len(self.foes) <= 1:
+            self.renderer.draw_string_2d(20, 300, 2, 2, "\n".join(self.debug[1]), self.renderer.team_color(alt_color=True))
         self.debug[1] = []
 
     def clear(self):
         self.shooting = False
         self.shooting_short = False
-        self.backchecking = False
-        self.panic = False
         self.stack = []
 
     def is_clear(self):
@@ -143,6 +167,8 @@ class GoslingAgent(BaseAgent):
 
     def preprocess(self, packet):
         # Calling the update functions for all of the objects
+        # self.deltaTime = max(min(1, self.maxDT), packet.game_info.seconds_elapsed - self.time)
+
         if packet.num_cars != len(self.friends)+len(self.foes)+1:
             self.refresh_player_lists(packet)
         for car in self.friends:
@@ -156,12 +182,38 @@ class GoslingAgent(BaseAgent):
         self.game.update(packet)
         self.time = packet.game_info.seconds_elapsed
         # When a new kickoff begins we empty the stack
-        if self.kickoff_flag == False and (not self.shooting or self.shooting_short) and packet.game_info.is_round_active and packet.game_info.is_kickoff_pause:
+        if self.kickoff_flag == False and packet.game_info.is_round_active and packet.game_info.is_kickoff_pause:
+            self.kickoff_done = False
             self.clear()
         # Tells us when to go for kickoff
         self.kickoff_flag = packet.game_info.is_round_active and packet.game_info.is_kickoff_pause
-        self.ball_to_goal = int(
-            Vec3(self.friend_goal.location).dist(Vec3(self.ball.location)))
+        self.ball_to_goal = int(self.friend_goal.location.dist(self.ball.location))
+
+        try:
+            if self.odd_tick:  # and packet.game_info.is_round_active <- THIS CAUSES A CRASH FOR SOME REASON
+                agent_copy = {
+                    "ball": deepcopy(self.ball),
+                    "foes": deepcopy(self.foes),
+                    "ball_to_goal": copy(self.ball_to_goal),
+                    "ball_struct": self.get_ball_prediction_struct(),
+                    "team": copy(self.team),
+                    "me": deepcopy(self.me),
+                    "friends": deepcopy(self.friends)
+                }
+
+                if self.enemy_prediction != None:
+                    self.enemy_prediction.add_agent(agent_copy)
+
+                if self.teammate_prediction != None:
+                    self.teammate_prediction.add_agent(agent_copy)
+
+                self.ball_prediction.add_agent(agent_copy)
+
+                self.predictions = get_predictions()
+        except Exception as err:
+            print(err)
+
+        self.odd_tick = not self.odd_tick
 
     def dbg_val(self, item):
         self.debug[0].append(str(item))
@@ -180,7 +232,7 @@ class GoslingAgent(BaseAgent):
         # Run our strategy code
         self.run()
         # run the routine on the end of the stack
-        if len(self.stack) > 0:
+        if not self.is_clear():
             self.stack[-1].run(self)
 
         if self.debugging:
@@ -190,18 +242,6 @@ class GoslingAgent(BaseAgent):
             self.debug = [[], []]
 
         return self.controller
-
-    def stay_connected_to_twitch_broker(self, port):
-        register_api_config = Configuration()
-        register_api_config.host = f"http://127.0.0.1:{STANDARD_TWITCH_BROKER_PORT}"
-        twitch_broker_register = RegisterApi(ApiClient(configuration=register_api_config))
-        while True:
-            try:
-                twitch_broker_register.register_action_server(
-                    ActionServerRegistration(base_url=f"http://127.0.0.1:{port}"))
-            except MaxRetryError:
-                self.logger.warning('Failed to register with twitch broker, will try again...')
-            sleep(10)
 
     def get_actions_currently_available(self):
         pass
@@ -343,7 +383,7 @@ class Matrix3:
     # Matrix3[2] is the "up" direction of a given car
     # If you have a distance between the car and some object, ie ball.location - car.location,
     # you can convert that to local coordinates by dotting it with this matrix
-    #ie: local_ball_location = Matrix3.dot(ball.location - car.location)
+    # ie: local_ball_location = Matrix3.dot(ball.location - car.location)
     def __init__(self, pitch, yaw, roll):
         CP = math.cos(pitch)
         SP = math.sin(pitch)
@@ -421,6 +461,9 @@ class Vector3:
         # Vector3's can be printed to console
         return F"({self.data[0]}, {self.data[1]}, {self.data[2]})"
     __repr__ = __str__
+
+    def int(self):
+        return Vector3(int(self[0]), int(self[1]), int(self[2]))
 
     def __eq__(self, value):
         # Vector3's can be compared with:
@@ -509,6 +552,14 @@ class Vector3:
         # Returns the angle between this Vector3 and another Vector3
         return math.acos(round(self.flatten().normalize().dot(value.flatten().normalize()), 4))
 
+    def angle3D(self, value):
+        def cap(x, low, high):
+            return max(min(x, high), low)
+
+        # Returns the angle between this Vector3 and another Vector3
+        # return math.acos(round(self.normalize().dot(value.normalize()), 4))
+        return math.acos(cap(self.normalize().dot(value.normalize()), -1, 1))
+
     def rotate(self, angle):
         # Rotates this Vector3 by the given angle in radians
         # Note that this is only 2D, in the x and y axis
@@ -526,3 +577,21 @@ class Vector3:
         if start.dot(s) < end.dot(s):
             return end
         return start
+
+    def dist(self, value):
+        return (self - value).magnitude()
+
+    def flat_dist(self, value):
+        return (self.flatten() - value.flatten()).magnitude()
+
+    def cap(self, low, high):
+        new_vector = []
+        for item in self:
+            if item < low:
+                new_vector.append(low)
+            elif item > high:
+                new_vector.append(high)
+            else:
+                new_vector.append(item)
+
+        return Vector3(*new_vector)
