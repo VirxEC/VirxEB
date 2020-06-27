@@ -128,7 +128,7 @@ def find_risky_hits(agent, targets):
                             left_vector, right_vector)
                         # relax the in_field requirement
                         if in_field(ball_location - (100*best_shot_vector), 1):
-                            if ball_location[2] >= 500:
+                            if ball_location[2] >= 200:
                                 aerial = Aerial(
                                     ball_location - 92 * best_shot_vector, intercept_time, True, target=best_shot_vector)
                                 if aerial.is_viable(agent.me, agent.time):

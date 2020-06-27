@@ -134,8 +134,7 @@ class VirxEB(GoslingAgent):
                             self.push(short_shot(Vector3(0, 0, 320)))
                         else:
                             team = -1 if self.team == 0 else 1
-                            self.push(
-                                goto(Vector3(0, self.ball.location.y + (team * 200), 0)))
+                            self.push(goto(Vector3(0, self.ball.location.y + (team * 200), 0)))
 
                 self.defensive_shot += 1
             else:
