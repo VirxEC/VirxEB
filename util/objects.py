@@ -25,6 +25,9 @@ class MyActionBroker(BotActionBroker):
         self.bot = bot
         self.current_action = None
 
+    def update_agent(self, agent):
+        self.bot = agent
+
     def get_actions_currently_available(self):
         return self.bot.get_actions_currently_available()
 
@@ -214,6 +217,8 @@ class GoslingAgent(BaseAgent):
             print(err)
 
         self.odd_tick = not self.odd_tick
+
+        self.action_broker.update_agent(self)
 
     def dbg_val(self, item):
         self.debug[0].append(str(item))

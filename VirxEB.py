@@ -13,21 +13,21 @@ class VirxEB(GoslingAgent):
     def get_actions_currently_available(self):
         a_actions = []
 
-        if self.kickoff_done:
-            if self.me.boost < 60:
+        if self.bot.kickoff_done:
+            if self.bot.me.boost < 60:
                 a_actions.append(BotAction(description="Get small boost(s)", action_type="get_boost", data={'value': False}))
-                if self.me.boost < 36:
+                if self.bot.me.boost < 36:
                     a_actions.append(BotAction(description="Get large boost", action_type="get_boost", data={'value': True}))
 
-            if self.defender:
+            if self.bot.defender:
                 a_actions.append(BotAction(description="Attack (playstyle)", action_type="playstyle", data={'value': False}))
             else:
                 a_actions.append(BotAction(description="Defend (playstyle)", action_type="playstyle", data={'value': True}))
 
-            if not self.shooting:
+            if not self.bot.shooting:
                 a_actions.append(BotAction(description="Take a shot", action_type="panic", data={}))
 
-            if not self.backchecking:
+            if not self.bot.backchecking:
                 a_actions.append(BotAction(description="Backcheck", action_type="backcheck", data={}))
 
         return [AvailableActions(entity_name=f"VirxEB", current_action=self.action_broker.current_action, available_actions=a_actions)]
