@@ -118,11 +118,9 @@ def shot_valid(agent, shot, threshold=45):
     # preparing to interpolate between the selected slices
     dt = slices[latest].game_seconds - slices[soonest].game_seconds
     time_from_soonest = shot.intercept_time - slices[soonest].game_seconds
-    slopes = (Vector3(slices[latest].physics.location) -
-              Vector3(slices[soonest].physics.location)) * (1/dt)
+    slopes = (Vector3(slices[latest].physics.location) - Vector3(slices[soonest].physics.location)) * (1/dt)
     # Determining exactly where the ball will be at the given shot's intercept_time
-    predicted_ball_location = Vector3(
-        slices[soonest].physics.location) + (slopes * time_from_soonest)
+    predicted_ball_location = Vector3(slices[soonest].physics.location) + (slopes * time_from_soonest)
     # Comparing predicted location with where the shot expects the ball to be
     return (shot.ball_location - predicted_ball_location).magnitude() < threshold
 

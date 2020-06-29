@@ -21,7 +21,7 @@ class Gui(Thread):
 
         root.title(bot_name)
 
-        root.geometry("300x200")
+        root.geometry("250x250")
 
         # Disable driving
 

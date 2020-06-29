@@ -1,4 +1,5 @@
 from queue import Empty
+from copy import copy
 
 # from rlbot.utils.game_state_util import BallState, GameState, Physics
 # from rlbot.utils.game_state_util import Vector3 as GSVec3
@@ -34,10 +35,16 @@ class VirxEB(GoslingAgent):
         """
         This is for state setting the ball to high up for aerial testing
         ""
-        if self.ball.location.z < 98:
-            ball_state = BallState(Physics(location=GSVec3(0, 0, 1900), velocity=GSVec3(0, 0, 0), angular_velocity=GSVec3(0, 0, 0)))
+        if not self.shooting and self.ball.location.z < 98:
+            ball_state = BallState(Physics(location=GSVec3(0, -3000, self.ball.location.z), velocity=GSVec3(0, 0, 2000), angular_velocity=GSVec3(0, 0, 0)))
             game_state = GameState(ball=ball_state)
             self.set_game_state(game_state)
+
+        if not self.shooting:
+            self.smart_shot((self.foe_goal.left_post, self.foe_goal.right_post))
+
+        if self.is_clear():
+            self.push(goto(Vector3(0, 0, 0), self.foe_goal.location))
         """
 
         if not self.kickoff_done:
@@ -198,10 +205,15 @@ class VirxEB(GoslingAgent):
     def get_shot(self, target, cap=6):
         shots = []
 
-        shots = (find_hits(self, {"target": target}))['target']
+        shots += (find_hits(self, {"target": target}))['target']
 
-        if len(shots) == 0 and len(self.friends) > 0 and self.me.boost > 50:
-            shots = (find_risky_hits(self, {"target": target}))['target']
+        if (len(self.friends) > 0 or len(self.foes) > 1) and self.me.boost > 40:
+            shots += (find_risky_hits(self, {"target": target}))['target']
+
+        def sort_function(shot):
+            return shot.intercept_time
+
+        shots.sort(key=sort_function)
 
         if len(shots) > 0:
             intercept = None
@@ -209,7 +221,7 @@ class VirxEB(GoslingAgent):
                 shot_class = shot.__class__.__name__
 
                 if shot_class == "Aerial":
-                    intercept = shot.target
+                    intercept = shot.ball_location
                 elif shot_class == "aerial_shot":
                     intercept = shot.intercept
                 elif shot_class == "jump_shot":
@@ -248,10 +260,9 @@ class VirxEB(GoslingAgent):
         if defend and not self.shooting and not self.is_clear():
             self.clear()
 
-        self.push(shot)
-
-        self.send_quick_chat(QuickChats.CHAT_TEAM_ONLY,
-                             QuickChats.Information_IGotIt)
+        if self.is_clear():
+            self.push(shot)
+            self.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_IGotIt)
 
     def send_comm(self, msg):
         message = {
@@ -299,7 +310,7 @@ class VirxEB(GoslingAgent):
 
     def do_kickoff(self):
         if len(self.friends) > 0:
-            friend_distances = self.predictions['teammates_from_goal']
+            friend_distances = copy(self.predictions['teammates_from_goal'])
             friend_distances.append(self.me.location.dist(self.ball.location))
 
             min_distance = min(friend_distances)
@@ -333,7 +344,7 @@ class VirxEB(GoslingAgent):
         back_left = (-256, 3840)
         back = (0, 4608)
 
-        def kickoff_check(pair, threshold=50):
+        def kickoff_check(pair, threshold=100):
             if pair[0] - threshold < self.me.location.x and self.me.location.x < pair[0] + threshold and pair[1] - threshold < abs(self.me.location.y) and abs(self.me.location.y) < pair[1] + threshold:
                 return True
 

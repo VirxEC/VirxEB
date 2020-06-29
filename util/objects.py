@@ -126,7 +126,7 @@ class GoslingAgent(BaseAgent):
 
     def debug_2d(self):
         if self.show_coords:
-            self.debug[1].append(str(self.me.location))
+            self.debug[1].append(str(self.me.location.int()))
 
         self.renderer.draw_string_2d(20, 300, 2, 2, "\n".join(self.debug[1]), self.renderer.team_color(alt_color=True))
         self.debug[1] = []
@@ -481,6 +481,13 @@ class Vector3:
         if return_magnitude:
             return Vector3(0, 0, 0), 0
         return Vector3(0, 0, 0)
+
+    def norm(self):
+        """
+        Returns the Euclidean length of a vector
+        """
+        return math.sqrt(self.dot(self))
+
     # Linear algebra functions
 
     def dot(self, value):

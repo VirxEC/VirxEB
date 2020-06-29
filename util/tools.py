@@ -31,8 +31,7 @@ def find_hits(agent, targets):
         time_remaining = intercept_time - agent.time
         if time_remaining > 0:
             ball_location = Vector3(struct.slices[i].physics.location)
-            ball_velocity = Vector3(
-                struct.slices[i].physics.velocity).magnitude()
+            ball_velocity = Vector3(struct.slices[i].physics.velocity).magnitude()
 
             if abs(ball_location[1]) > 5250:
                 break  # abandon search if ball is scored at/after this point
@@ -54,24 +53,20 @@ def find_hits(agent, targets):
             backward_time = time_remaining - (backward_angle * 0.418)
 
             # If the car only had to drive in a straight line, we ensure it has enough time to reach the ball (a few assumptions are made)
-            forward_flag = forward_time > 0.0 and (
-                distance*1.05 / forward_time) < (2290 if agent.me.boost > distance/100 else 1400)
-            backward_flag = distance < 1500 and backward_time > 0.0 and (
-                distance*1.05 / backward_time) < 1200
+            forward_flag = forward_time > 0.0 and (distance*1.05 / forward_time) < (2290 if agent.me.boost > distance/100 else 1400)
+            backward_flag = distance < 1500 and backward_time > 0.0 and (distance*1.05 / backward_time) < 1200
 
             # Provided everything checks out, we begin to look at the target pairs
             if forward_flag or backward_flag:
                 for pair in targets:
                     # First we correct the target coordinates to account for the ball's radius
                     # If swapped == True, the shot isn't possible because the ball wouldn't fit between the targets
-                    left, right, swapped = post_correction(
-                        ball_location, targets[pair][0], targets[pair][1])
+                    left, right, swapped = post_correction(ball_location, targets[pair][0], targets[pair][1])
                     if not swapped:
                         # Now we find the easiest direction to hit the ball in order to land it between the target points
                         left_vector = (left - ball_location).normalize()
                         right_vector = (right - ball_location).normalize()
-                        best_shot_vector = direction.clamp(
-                            left_vector, right_vector)
+                        best_shot_vector = direction.clamp(left_vector, right_vector)
 
                         # Check to make sure our approach is inside the field
                         if in_field(ball_location - (200*best_shot_vector), 1):
@@ -80,11 +75,9 @@ def find_hits(agent, targets):
                             slope = find_slope(best_shot_vector, car_to_ball)
                             if forward_flag:
                                 if ball_location[2] <= max_jump_hit_height and slope > 0.0:
-                                    hits[pair].append(
-                                        jump_shot(ball_location, intercept_time, best_shot_vector, slope))
+                                    hits[pair].append(jump_shot(ball_location, intercept_time, best_shot_vector, slope))
                                 if ball_location[2] > max_jump_hit_height and ball_location[2] <= max_aerial_height and slope > 1.0 and (ball_location[2]-250) * 0.14 > agent.me.boost:
-                                    hits[pair].append(aerial_shot(
-                                        ball_location, intercept_time, best_shot_vector, slope))
+                                    hits[pair].append(aerial_shot(ball_location, intercept_time, best_shot_vector, slope))
                             elif backward_flag and ball_location[2] <= 280 and slope > 0.25:
                                 hits[pair].append(
                                     jump_shot(ball_location, intercept_time, best_shot_vector, slope, -1))
@@ -98,17 +91,24 @@ def find_risky_hits(agent, targets):
     if struct == None:
         return hits
 
-    i = 40  # Begin by looking 0.5 seconds into the future
+    i = 15  # Begin by looking 0.5 seconds into the future
     while i < struct.num_slices:
         intercept_time = struct.slices[i].game_seconds
         time_remaining = intercept_time - agent.time
         if time_remaining > 0:
             ball_location = Vector3(struct.slices[i].physics.location)
-            ball_velocity = Vector3(
-                struct.slices[i].physics.velocity).magnitude()
+
             if abs(ball_location[1]) > 5250:
                 break
+
+            ball_velocity = Vector3(struct.slices[i].physics.velocity).magnitude()
+
             i += 15 - cap(int(ball_velocity//150), 0, 13)
+
+            if ball_location[2] < 592:
+                i += 15 - cap(int(ball_velocity//150), 0, 13)
+                continue
+
             car_to_ball = ball_location - agent.me.location
             direction, distance = car_to_ball.normalize(True)
             # assume we are traveling towards the ball
@@ -118,18 +118,18 @@ def find_risky_hits(agent, targets):
             # remove the 5% extra distance assumption and forget about boost requirements
             if forward_time > 0.0 and (distance / forward_time) < 2300:
                 for pair in targets:
-                    left, right, swapped = post_correction(
-                        ball_location, targets[pair][0], targets[pair][1])
+                    left, right, swapped = post_correction(ball_location, targets[pair][0], targets[pair][1])
                     if not swapped:
                         left_vector = (left - ball_location).normalize()
                         right_vector = (right - ball_location).normalize()
-                        best_shot_vector = direction.clamp(
-                            left_vector, right_vector)
+                        best_shot_vector = direction.clamp(left_vector, right_vector)
                         # relax the in_field requirement
                         if in_field(ball_location - (100*best_shot_vector), 1):
-                            if ball_location[2] >= 200:
-                                aerial = Aerial(
-                                    ball_location - 92 * best_shot_vector, intercept_time, True, target=best_shot_vector)
+                            slope = find_slope(best_shot_vector, car_to_ball)
+                            ball_intercept = ball_location - 92 * best_shot_vector
+
+                            if ball_intercept.z >= 500 and slope > 1:
+                                aerial = Aerial(ball_intercept, intercept_time)
                                 if aerial.is_viable(agent.me, agent.time):
                                     hits[pair].append(aerial)
     return hits
