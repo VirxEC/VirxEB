@@ -1,5 +1,4 @@
 from queue import Empty
-from copy import copy
 
 # from rlbot.utils.game_state_util import BallState, GameState, Physics
 # from rlbot.utils.game_state_util import Vector3 as GSVec3
@@ -63,12 +62,14 @@ class VirxEB(GoslingAgent):
                 self.clear()
             elif self.is_clear() and self.predictions['closest_enemy'] != None and self.predictions['closest_enemy'] > 2500 and self.ball_to_goal < 1500 and side(self.team) == sign(self.me.location.y) and abs(self.me.location.y) > 5400:
                 self.push(atba())
-            elif self.defender:
+            elif self.playstyle == self.playstyles.Defensive:
                 self.playstyle_defend()
-            else:
+            elif self.playstyle == self.playstyles.Offensive:
                 self.playstyle_attack()
+            else:
+                self.playstyle_neutral()
 
-            if self.is_clear() and not self.defender:
+            if self.is_clear() and self.playstyle == self.playstyles.Offensive:
                 self.clear()
 
                 if not self.shooting:
@@ -160,6 +161,20 @@ class VirxEB(GoslingAgent):
                 else:
                     self.backcheck(simple=True)
 
+    def playstyle_neutral(self):
+        self.panic_at(5000, 1000)
+
+        if self.is_clear():
+            if self.me.airborne:
+                self.recover_from_air()
+            elif self.me.boost < 72 and ((self.team == 0 and self.ball.location.y > 2048) or (self.team == 1 and self.ball.location.y < -2048)):
+                if self.me.boost < 48:
+                    self.goto_nearest_boost()
+                else:
+                    self.goto_nearest_boost(only_small=True)
+            else:
+                self.backcheck()
+
     def playstyle_attack(self):
         self.panic_at(2500, 1500)
 
@@ -241,16 +256,17 @@ class VirxEB(GoslingAgent):
 
             if msg.get("VirxEB") != None and msg['VirxEB']['team'] == self.team:
                 msg = msg['VirxEB']
-                if self.defender:
+                if self.playstyle == self.playstyles.Defensive:
                     if msg.get("match_defender"):
                         if msg['index'] < self.index:
-                            self.defender = False
+                            self.playstyle = self.playstyles.Neutral
                             self.clear()
                             self.goto_nearest_boost()
                             print(f"VirxEB ({self.index}): You can defend")
                 else:
                     if msg.get("attacking"):
                         if msg['index'] < self.index:
+                            self.playstyle = self.playstyles.Neutral
                             self.clear()
                             self.goto_nearest_boost()
 
@@ -275,14 +291,11 @@ class VirxEB(GoslingAgent):
         })
 
     def backcheck(self, simple=False):
-        self_from_goal = self.friend_goal.location.dist(self.me.location)
+        self_from_goal = self.predictions['self_from_goal']
         if self_from_goal > 500:
-            if len(self.predictions['teammates_from_goal']) > 0:
-                self_is_farthest = max(self.predictions['teammates_from_goal']) == self_from_goal
-            else:
-                self_is_farthest = False
+            self_is_farthest = max(self.predictions['teammates_from_goal']) == self_from_goal if len(self.predictions['teammates_from_goal']) > 0 else False
 
-            if not self.defender and not simple and (self.team == 0 and self.ball.location.y > 2048) or (self.team == 1 and self.ball.location.y < -2048):
+            if self.playstyle != self.playstyles.Defensive and not simple and ((self.team == 0 and self.ball.location.y > 2048) or (self.team == 1 and self.ball.location.y < -2048)):
                 bc_x = 0
                 bc_y = 0
                 ball_loc = self.ball.location.y * side(not self.team)
@@ -310,20 +323,16 @@ class VirxEB(GoslingAgent):
 
     def do_kickoff(self):
         if len(self.friends) > 0:
-            friend_distances = copy(self.predictions['teammates_from_goal'])
-            friend_distances.append(self.me.location.dist(self.ball.location))
 
-            min_distance = min(friend_distances)
-            max_distance = max(friend_distances)
+            min_distance = min(self.predictions['teammates_from_goal'])
+            max_distance = max(self.predictions['teammates_from_goal'])
 
-            car_distance = self.me.location.dist(self.ball.location)
-
-            if min_distance - 5 < car_distance and car_distance < min_distance + 5:
+            if min_distance - 5 < self.predictions['self_from_goal'] and self.predictions['self_from_goal'] < min_distance + 5:
                 self.offensive_kickoff()
-            elif max_distance - 5 < car_distance and car_distance < max_distance + 5:
+            elif max_distance - 5 < self.predictions['self_from_goal'] and self.predictions['self_from_goal'] < max_distance + 5:
                 self.clear()
 
-                self.defender = True
+                self.playstyle = self.playstyles.Defensive
 
                 print(f"VirxEB ({self.index}): Defending!")
 
@@ -366,7 +375,7 @@ class VirxEB(GoslingAgent):
         self.send_comm({
             "attacking": True
         })
-        self.defender = False
+        self.playstyle = self.playstyles.Offensive
 
     def goto_nearest_boost(self, only_small=False):
         self.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_NeedBoost)

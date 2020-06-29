@@ -1,4 +1,5 @@
 import math
+from enum import Enum
 
 import rlbot.utils.structures.game_data_struct as game_data_struct
 from rlbot.agents.base_agent import BaseAgent, SimpleControllerState
@@ -6,8 +7,11 @@ from rlbot.agents.base_agent import BaseAgent, SimpleControllerState
 from gui import Gui
 from util.prediction import Prediction
 
-# This file holds all of the objects used in gosling utils
-# Includes custom vector and matrix objects
+
+class Playstyle(Enum):
+    Defensive = -1
+    Neutral = 0
+    Offensive = 1
 
 
 class GoslingAgent(BaseAgent):
@@ -39,7 +43,9 @@ class GoslingAgent(BaseAgent):
         self.my_score = 0
         self.foe_score = 0
 
-        self.defender = False
+        self.playstyles = Playstyle()
+        self.playstyle = self.playstyles.Neutral
+
         self.can_shoot = None
         self.shooting = False
         self.shooting_short = False
@@ -66,11 +72,14 @@ class GoslingAgent(BaseAgent):
         print(f"VirxEB ({self.index}): Setting up predictive services...")
         self.predictions = {
             "can_shoot": None,
-            "closest_enemy": None,
-            "own_goal": None,
-            "goal": None,
-            "ball_struct": None,
-            "teammates_from_goal": []
+            "closest_enemy": 0,
+            "own_goal": False,
+            "goal": False,
+            "ball_struct": [],
+            "teammates_from_goal": [],
+            "teammates_to_ball": [],
+            "self_from_goal": 0,
+            "self_to_ball": 0
         }
 
         self.prediction = Prediction(self)
@@ -142,20 +151,26 @@ class GoslingAgent(BaseAgent):
     def preprocess(self, packet):
         if packet.num_cars != len(self.friends)+len(self.foes)+1:
             self.refresh_player_lists(packet)
+
         for car in self.friends:
             car.update(packet)
+
         for car in self.foes:
             car.update(packet)
+
         for pad in self.boosts:
             pad.update(packet)
+
         self.ball.update(packet)
         self.me.update(packet)
         self.game.update(packet)
         self.time = packet.game_info.seconds_elapsed
+
         # When a new kickoff begins we empty the stack
         if self.kickoff_flag == False and packet.game_info.is_round_active and packet.game_info.is_kickoff_pause:
             self.kickoff_done = False
             self.clear()
+
         # Tells us when to go for kickoff
         self.kickoff_flag = packet.game_info.is_round_active and packet.game_info.is_kickoff_pause
         self.ball_to_goal = int(self.friend_goal.location.dist(self.ball.location))
@@ -235,14 +250,10 @@ class car_object:
 
     def update(self, packet):
         car = packet.game_cars[self.index]
-        self.location.data = [car.physics.location.x,
-                              car.physics.location.y, car.physics.location.z]
-        self.velocity.data = [car.physics.velocity.x,
-                              car.physics.velocity.y, car.physics.velocity.z]
-        self.orientation = Matrix3(
-            car.physics.rotation.pitch, car.physics.rotation.yaw, car.physics.rotation.roll)
-        self.angular_velocity = self.orientation.dot(
-            [car.physics.angular_velocity.x, car.physics.angular_velocity.y, car.physics.angular_velocity.z]).data
+        self.location.data = [car.physics.location.x, car.physics.location.y, car.physics.location.z]
+        self.velocity.data = [car.physics.velocity.x, car.physics.velocity.y, car.physics.velocity.z]
+        self.orientation = Matrix3(car.physics.rotation.pitch, car.physics.rotation.yaw, car.physics.rotation.roll)
+        self.angular_velocity = self.orientation.dot([car.physics.angular_velocity.x, car.physics.angular_velocity.y, car.physics.angular_velocity.z]).data
         self.demolished = car.is_demolished
         self.airborne = not car.has_wheel_contact
         self.supersonic = car.is_super_sonic

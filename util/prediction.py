@@ -42,13 +42,21 @@ class Prediction(Thread):
                 teammates = self.agent.friends
                 teammates.append(self.agent.me)
 
-                teammates_from_goal = [self.agent.ball.location.dist(teammate.location) for teammate in teammates]
+                teammates_from_goal = [self.agent.goal.location.dist(teammate.location) for teammate in teammates]
                 self.agent.predictions["teammates_from_goal"] = teammates_from_goal
+
+                self.agent.predictions["teammates_to_ball"] = [self.agent.ball.location.dist(teammate.location) for teammate in teammates]
 
                 if self.agent.ball.location.dist(self.agent.me.location) == min(teammates_from_goal):
                     self.agent.predictions["can_shoot"] = False
                 else:
                     self.agent.predictions["can_shoot"] = True
+
+            elif self.agent.playstyle != self.playstyles.Offensive:
+                self.agent.playstyle = self.playstyles.Offensive
+
+            self.agent.predictions['self_from_goal'] = self.agent.friend_goal.location.dist(self.agent.me.location)
+            self.agent.predictions['self_to_ball'] = self.agent.ball.location.dist(self.agent.me.location)
 
             is_own_goal = False
             is_goal = False

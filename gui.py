@@ -6,8 +6,8 @@ from tkinter import Tk, ttk, BooleanVar, StringVar, HORIZONTAL, PhotoImage
 
 class Gui(Thread):
     def __init__(self, agent):
+        super().__init__(daemon=True)
         self.agent = agent
-        Thread.__init__(self, daemon=True)
 
     def run(self):
         root = Tk()
