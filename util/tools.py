@@ -3,7 +3,6 @@ import math
 from util.objects import Vector3
 from util.routines import aerial_shot, jump_shot, Aerial
 from util.utils import cap, find_slope, in_field, post_correction
-from util.interface import get_predictions
 # This file is for strategic tools
 
 
@@ -12,7 +11,7 @@ def find_hits(agent, targets):
     # find_hits is only meant for routines that require a defined intercept time/place in the future
     # find_hits should not be called more than once in a given tick, as it has the potential to use an entire tick to calculate
     hits = {name: [] for name in targets}
-    struct = get_predictions()['ball_struct']
+    struct = agent.predictions['ball_struct']
 
     if struct == None:
         return hits
@@ -94,12 +93,12 @@ def find_hits(agent, targets):
 
 def find_risky_hits(agent, targets):
     hits = {name: [] for name in targets}
-    struct = agent.get_ball_prediction_struct()
+    struct = agent.predictions['ball_struct']
 
     if struct == None:
         return hits
 
-    i = 15
+    i = 40  # Begin by looking 0.5 seconds into the future
     while i < struct.num_slices:
         intercept_time = struct.slices[i].game_seconds
         time_remaining = intercept_time - agent.time

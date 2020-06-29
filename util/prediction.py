@@ -1,157 +1,77 @@
-from queue import Full, Queue
-from threading import Thread
-from traceback import print_exc
+from threading import Thread, Event
 
 from rlbot.utils.structures.quick_chats import QuickChats
 
-from util.interface import get_predictions, set_prediction
 
+class Prediction(Thread):
+    def __init__(self, agent):
+        super().__init__(daemon=True)
+        self.agent = agent
+        self.event = Event()
 
-class EnemyPrediction:
-    def __init__(self):
-        try:
-            self.queue = Queue(3)
-            worker = Thread(target=self.main, args=(self.queue,))
-            worker.setDaemon(True)
-            worker.start()
-        except Exception:
-            print_exc()
-
-    def main(self, q):
+    def run(self):
         while True:
-            try:
-                agent = q.get()
+            self.event.wait()
 
+            len_friends = len(self.agent.friends)
+
+            if len(self.agent.foes) > 0:
                 foe_distances = []
 
                 shoot_threshold = 4000
 
-                if len(agent['friends']) == 1:
+                if len_friends == 1:
                     shoot_threshold = 3500
-                elif len(agent['friends']) == 2:
+                elif len_friends == 2:
                     shoot_threshold = 3000
-                elif len(agent['friends']) > 2:
+                elif len_friends > 2:
                     shoot_threshold = 2750
 
-                for foe in agent['foes']:
-                    foe_dist = agent['ball'].location.dist(foe.location)
+                for foe in self.agent.foes:
+                    foe_dist = self.agent.ball.location.dist(foe.location)
                     foe_distances.append(foe_dist)
 
-                    if len(agent['friends']) == 0 and foe_dist < 500 and agent['ball_to_goal'] > shoot_threshold and foe.location.y - 200 < agent['ball'].location.y and agent['ball'].location.y < foe.location.y + 200:
-                        set_prediction('can_shoot', False)
-                        break
+                    if len_friends == 0 and foe_dist < 500 and self.agent.ball_to_goal > shoot_threshold and foe.location.y - 200 < self.agent.ball.location.y and self.agent.ball.location.y < foe.location.y + 200:
+                        self.agent.predictions['can_shoot'] = False
                     else:
-                        set_prediction('can_shoot', True)
+                        self.agent.predictions['can_shoot'] = True
 
-                set_prediction('closest_enemy', min(foe_distances))
+                self.agent.predictions['closest_enemy'] = min(foe_distances)
 
-                q.task_done()
-            except Exception:
-                print_exc()
+            if len_friends > 0:
+                teammates = self.agent.friends
+                teammates.append(self.agent.me)
 
-    def add_agent(self, agent):
-        try:
-            self.queue.put_nowait(agent)
-        except Full:
-            print(f"VirxEB ({ agent['me'].index }): Enemy prediction is lagging behind...")
-            self.queue.join()
-            print(f"VirxEB ( { agent['me'].index }): All caught up! Here I go!")
-        except Exception:
-            print_exc()
+                teammates_from_goal = [self.agent.ball.location.dist(teammate.location) for teammate in teammates]
+                self.agent.predictions["teammates_from_goal"] = teammates_from_goal
 
-
-class BallPrediction:
-    def __init__(self):
-        try:
-            self.queue = Queue(3)
-            worker = Thread(target=self.main, args=(self.queue,))
-            worker.setDaemon(True)
-            worker.start()
-        except Exception:
-            print_exc()
-
-    def main(self, q):
-        while True:
-            try:
-                agent = q.get()
-
-                is_own_goal = False
-                is_goal = False
-
-                ball_prediction = agent['ball_struct']
-                set_prediction('ball_struct', ball_prediction)
-
-                if ball_prediction is not None:
-                    for i in range(0, ball_prediction.num_slices, 2):
-                        prediction_slice = ball_prediction.slices[i]
-                        location = prediction_slice.physics.location
-
-                        if (agent['team'] == 0 and location.y <= -7680) or (agent['team'] == 1 and location.y >= 7680):
-                            is_own_goal = True
-                            break
-                        elif (agent['team'] == 0 and location.y >= 7680) or (agent['team'] == 1 and location.y <= -7680):
-                            is_goal = True
-                            break
-
-                if is_own_goal:
-                    if not get_predictions()['own_goal']:
-                        agent.send_quick_chat(
-                            QuickChats.CHAT_EVERYONE, QuickChats.Compliments_NiceShot)
-
-                set_prediction("own_goal", is_own_goal)
-                set_prediction("goal", is_goal)
-
-                q.task_done()
-            except Exception:
-                print_exc()
-
-    def add_agent(self, agent):
-        try:
-            self.queue.put_nowait(agent)
-        except Full:
-            print(f"VirxEB ({ agent['me'].index }): Ball prediction is lagging behind...")
-            self.queue.join()
-            print(f"VirxEB ( { agent['me'].index }): All caught up! Here I go!")
-        except Exception:
-            print_exc()
-
-
-class TeammatePrediction:
-    def __init__(self):
-        try:
-            self.queue = Queue(3)
-            worker = Thread(target=self.main, args=(self.queue,))
-            worker.setDaemon(True)
-            worker.start()
-        except Exception:
-            print_exc()
-
-    def main(self, q):
-        while True:
-            try:
-                agent = q.get()
-
-                teammates = agent['friends']
-                teammates.append(agent['me'])
-
-                teammates_from_goal = [agent['ball'].location.dist(teammate.location) for teammate in teammates]
-                set_prediction("teammates_from_goal", teammates_from_goal)
-
-                if agent['ball'].location.dist(agent['me'].location) == min(teammates_from_goal):
-                    set_prediction("can_shoot", False)
+                if self.agent.ball.location.dist(self.agent.me.location) == min(teammates_from_goal):
+                    self.agent.predictions["can_shoot"] = False
                 else:
-                    set_prediction("can_shoot", True)
+                    self.agent.predictions["can_shoot"] = True
 
-                q.task_done()
-            except Exception:
-                print_exc()
+            is_own_goal = False
+            is_goal = False
 
-    def add_agent(self, agent):
-        try:
-            self.queue.put_nowait(agent)
-        except Full:
-            print(f"VirxEB ({ agent['me'].index }): Teammate prediction is lagging behind...")
-            self.queue.join()
-            print(f"VirxEB ( { agent['me'].index }): All caught up! Here I go!")
-        except Exception:
-            print_exc()
+            ball_prediction = self.agent.get_ball_prediction_struct()
+            self.agent.predictions['ball_struct'] = ball_prediction
+
+            if ball_prediction is not None:
+                for i in range(0, ball_prediction.num_slices, 2):
+                    prediction_slice = ball_prediction.slices[i]
+                    location = prediction_slice.physics.location
+
+                    if (self.agent.team == 0 and location.y <= -7680) or (self.agent.team == 1 and location.y >= 7680):
+                        is_own_goal = True
+                    elif (self.agent.team == 0 and location.y >= 7680) or (self.agent.team == 1 and location.y <= -7680):
+                        is_goal = True
+
+            if is_own_goal:
+                if not self.agent.predictions['own_goal']:
+                    self.agent.send_quick_chat(
+                        QuickChats.CHAT_EVERYONE, QuickChats.Compliments_NiceShot)
+
+            self.agent.predictions["own_goal"] = is_own_goal
+            self.agent.predictions["goal"] = is_goal
+
+            self.event.clear()

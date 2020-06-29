@@ -567,7 +567,7 @@ class corner_kickoff():
 
         distance = local_target.magnitude()
 
-        if distance < 450:
+        if distance < 650:
             if len(agent.foes) > 0 and agent.predictions['closest_enemy'] > 1000:
                 if distance < 100 or distance > 500:
                     agent.pop()
@@ -575,7 +575,7 @@ class corner_kickoff():
 
                 defaultPD(agent, local_target)
                 defaultThrottle(agent, 2300)
-            else:
+            elif distance < 450:
                 agent.pop()
                 agent.kickoff_done = True
                 agent.push(flip(agent.me.local(agent.foe_goal.location - agent.me.location)))

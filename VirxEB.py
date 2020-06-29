@@ -29,26 +29,21 @@ class VirxEB(GoslingAgent):
         )
 
         self.defensive_shot = None
-        self.debugging = True
 
     def run(self):
-        # self.dbg(f"({self.me.location.x}, {self.me.location.y}, {self.me.location.z})")
-        # self.dbg_val(self.defender)
+        """
+        This is for state setting the ball to high up for aerial testing
+        ""
+        if self.ball.location.z < 98:
+            ball_state = BallState(Physics(location=GSVec3(0, 0, 1900), velocity=GSVec3(0, 0, 0), angular_velocity=GSVec3(0, 0, 0)))
+            game_state = GameState(ball=ball_state)
+            self.set_game_state(game_state)
+        """
+
         if not self.kickoff_done:
             if self.is_clear():
                 self.do_kickoff()
         else:
-            """
-            # This is for state setting the ball to high up for aerial testing
-            if self.ball.location.z < 98:
-                ball_state = BallState(Physics(location=GSVec3(0, 0, 1200), velocity=GSVec3(
-                    0, 0, 0), angular_velocity=GSVec3(0, 0, 0)))
-                game_state = GameState(
-                    ball=ball_state
-                )
-                self.set_game_state(game_state)
-            """
-
             self.handle_matchcomms()
 
             if self.can_shoot != None and self.time - self.can_shoot >= 3:
@@ -79,19 +74,20 @@ class VirxEB(GoslingAgent):
                     self.clear()
                     self.smart_shot((self.foe_goal.left_post, self.foe_goal.right_post))
 
-            ball_prediction = self.predictions['ball_struct']
+            if self.debug_ball_path:
+                ball_prediction = self.predictions['ball_struct']
 
-            if ball_prediction is not None:
-                skip = 10
-                for i in range(0, ball_prediction.num_slices - (ball_prediction.num_slices % skip) - skip, skip):
-                    self.renderer.draw_line_3d(
-                        ball_prediction.slices[i].physics.location,
-                        ball_prediction.slices[i+skip].physics.location,
-                        self.renderer.grey()
-                    )
+                if ball_prediction is not None:
+                    for i in range(0, ball_prediction.num_slices - (ball_prediction.num_slices % self.debug_ball_path_precision) - self.debug_ball_path_precision, self.debug_ball_path_precision):
+                        self.line(
+                            ball_prediction.slices[i].physics.location,
+                            ball_prediction.slices[i + self.debug_ball_path_precision].physics.location
+                        )
 
             if self.shooting and not self.shooting_short:
                 self.dbg_val(self.stack[0].intercept_time - self.time)
+
+        ""
 
     def handle_quick_chat(self, index, team, quick_chat):
         if team != self.team and index != self.index:
@@ -108,7 +104,7 @@ class VirxEB(GoslingAgent):
     def panic_at(self, far_panic, close_panic):
         if self.ball_to_goal < far_panic or self.predictions['own_goal']:
             for d_shot in self.defensive_shots:
-                self.line(*d_shot, color=(255, 0, 0))
+                self.line(*d_shot, self.renderer.red())
 
             if not self.shooting:
 
@@ -170,7 +166,7 @@ class VirxEB(GoslingAgent):
                 self.recover_from_air()
             else:
                 for o_shot in self.offensive_shots:
-                    self.line(*o_shot)
+                    self.line(*o_shot, self.renderer.team_color(alt_color=True))
 
                 if self.predictions['goal'] == True or (self.foe_goal.location.dist(self.ball.location) <= 1500 and (self.predictions['closest_enemy'] > 1500 or self.foe_goal.location.dist(self.me.location) < self.predictions['closest_enemy'] + 250)):
                     shot = self.get_shot(self.offensive_shots[0])

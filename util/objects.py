@@ -1,11 +1,10 @@
 import math
-from copy import copy, deepcopy
 
 import rlbot.utils.structures.game_data_struct as game_data_struct
 from rlbot.agents.base_agent import BaseAgent, SimpleControllerState
 
-from util.interface import get_predictions
-from util.prediction import BallPrediction, EnemyPrediction, TeammatePrediction
+from gui import Gui
+from util.prediction import Prediction
 
 # This file holds all of the objects used in gosling utils
 # Includes custom vector and matrix objects
@@ -51,9 +50,34 @@ class GoslingAgent(BaseAgent):
 
         self.debug = [[], []]
         self.debugging = False
+        self.debug_lines = True
+        self.debug_3d_bool = True
+        self.debug_stack_bool = True
+        self.debug_2d_bool = False
+        self.show_coords = False
+        self.debug_ball_path = False
+        self.debug_ball_path_precision = 10
 
-        # self.maxDT = 1/120
-        # self.dt = 0
+        self.disable_driving = False
+
+        print(f"VirxEB ({self.index}): Setting up GUI...")
+        self.gui = Gui(self)
+
+        print(f"VirxEB ({self.index}): Setting up predictive services...")
+        self.predictions = {
+            "can_shoot": None,
+            "closest_enemy": None,
+            "own_goal": None,
+            "goal": None,
+            "ball_struct": None,
+            "teammates_from_goal": []
+        }
+
+        self.prediction = Prediction(self)
+
+    @staticmethod
+    def is_hot_reload_enabled():
+        return False
 
     def get_ready(self, packet):
         field_info = self.get_field_info()
@@ -64,22 +88,9 @@ class GoslingAgent(BaseAgent):
         self.refresh_player_lists(packet)
         self.ball.update(packet)
 
-        print(f"VirxEB ({self.index}): Setting up predictive services...")
-        self.predictions = get_predictions()
+        self.prediction.start()
 
-        if len(self.foes) > 0:
-            self.enemy_prediction = EnemyPrediction()
-        else:
-            print(f"VirxEB ({self.index}: I have no foes, so I'm skipping EnemyPrediction")
-            self.enemy_prediction = None
-
-        if len(self.friends) > 0:
-            self.teammate_prediction = TeammatePrediction()
-        else:
-            print(f"VirxEB ({self.index}): I have no friends, so I'm skipping TeammatePrediction")
-            self.teammate_prediction = None
-
-        self.ball_prediction = BallPrediction()
+        self.gui.start()
 
         self.init()
 
@@ -97,23 +108,27 @@ class GoslingAgent(BaseAgent):
         return self.stack.pop()
 
     def line(self, start, end, color=None):
-        color = color if color != None else [255, 255, 255]
-        self.renderer.draw_line_3d(start, end, self.renderer.create_color(255, *color))
+        if self.debugging and self.debug_lines:
+            color = color if color != None else self.renderer.grey()
+            self.renderer.draw_line_3d(start, end, color if type(color) != list else self.renderer.create_color(255, *color))
 
     def debug_stack(self):
         # Draws the stack on the screen
-        self.debug[0].append("STACK:")
+        if self.debug_stack_bool:
+            self.debug[0].append("STACK:")
 
-        for i in range(len(self.stack)-1, -1, -1):
-            self.debug[0].append(self.stack[i].__class__.__name__)
+            for i in range(len(self.stack)-1, -1, -1):
+                self.debug[0].append(self.stack[i].__class__.__name__)
 
         self.renderer.draw_string_3d(self.me.location, 2, 2, "\n".join(self.debug[0]), self.renderer.team_color(alt_color=True))
 
         self.debug[0] = []
 
     def debug_2d(self):
-        if len(self.friends) == 0 and len(self.foes) <= 1:
-            self.renderer.draw_string_2d(20, 300, 2, 2, "\n".join(self.debug[1]), self.renderer.team_color(alt_color=True))
+        if self.show_coords:
+            self.debug[1].append(str(self.me.location))
+
+        self.renderer.draw_string_2d(20, 300, 2, 2, "\n".join(self.debug[1]), self.renderer.team_color(alt_color=True))
         self.debug[1] = []
 
     def clear(self):
@@ -125,9 +140,6 @@ class GoslingAgent(BaseAgent):
         return len(self.stack) < 1
 
     def preprocess(self, packet):
-        # Calling the update functions for all of the objects
-        # self.deltaTime = max(min(1, self.maxDT), packet.game_info.seconds_elapsed - self.time)
-
         if packet.num_cars != len(self.friends)+len(self.foes)+1:
             self.refresh_player_lists(packet)
         for car in self.friends:
@@ -148,29 +160,8 @@ class GoslingAgent(BaseAgent):
         self.kickoff_flag = packet.game_info.is_round_active and packet.game_info.is_kickoff_pause
         self.ball_to_goal = int(self.friend_goal.location.dist(self.ball.location))
 
-        try:
-            if self.odd_tick:  # and packet.game_info.is_round_active <- THIS CAUSES A CRASH FOR SOME REASON
-                agent_copy = {
-                    "ball": deepcopy(self.ball),
-                    "foes": deepcopy(self.foes),
-                    "ball_to_goal": copy(self.ball_to_goal),
-                    "ball_struct": self.get_ball_prediction_struct(),
-                    "team": copy(self.team),
-                    "me": deepcopy(self.me),
-                    "friends": deepcopy(self.friends)
-                }
-
-                if self.enemy_prediction != None:
-                    self.enemy_prediction.add_agent(agent_copy)
-
-                if self.teammate_prediction != None:
-                    self.teammate_prediction.add_agent(agent_copy)
-
-                self.ball_prediction.add_agent(agent_copy)
-
-                self.predictions = get_predictions()
-        except Exception as err:
-            print(err)
+        if self.odd_tick:  # and packet.game_info.is_round_active <- THIS CAUSES A CRASH FOR SOME REASON
+            self.prediction.event.set()
 
         self.odd_tick = not self.odd_tick
 
@@ -195,13 +186,18 @@ class GoslingAgent(BaseAgent):
             self.stack[-1].run(self)
 
         if self.debugging:
-            self.debug_stack()
-            self.debug_2d()
+            if self.debug_3d_bool:
+                self.debug_stack()
+
+            if self.debug_2d_bool:
+                self.debug_2d()
         else:
             self.debug = [[], []]
 
-        return self.controller
-        # return SimpleControllerState()
+        if self.disable_driving:
+            return SimpleControllerState()
+        else:
+            return self.controller
 
     def init(self):
         # override this with any init code
