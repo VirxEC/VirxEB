@@ -78,14 +78,10 @@ class VirxEB(GoslingAgent):
                     elif self.team == 0 and self.me.location.y < -5100:
                         self.backcheck()
 
-                if self.is_clear():
-                    self.clear()
-                    self.smart_shot((self.foe_goal.left_post, self.foe_goal.right_post))
-
             if self.debug_ball_path:
                 ball_prediction = self.predictions['ball_struct']
 
-                if ball_prediction is not None:
+                if ball_prediction != None:
                     for i in range(0, ball_prediction.num_slices - (ball_prediction.num_slices % self.debug_ball_path_precision) - self.debug_ball_path_precision, self.debug_ball_path_precision):
                         self.line(
                             ball_prediction.slices[i].physics.location,

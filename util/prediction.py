@@ -40,16 +40,14 @@ class Prediction(Thread):
 
                     self.agent.predictions['closest_enemy'] = min(foe_distances)
 
-                self.agent.predictions['self_from_goal'] = self.agent.friend_goal.location.dist(self.agent.me.location)
-                self.agent.predictions['self_to_ball'] = self.agent.ball.location.dist(self.agent.me.location)
+                self.agent.predictions['self_from_goal'] = self.agent.friend_goal.location.flat_dist(self.agent.me.location)
+                self.agent.predictions['self_to_ball'] = self.agent.ball.location.flat_dist(self.agent.me.location)
 
                 if len_friends > 0:
                     teammates = self.agent.friends + [self.agent.me]
 
-                    self.agent.predictions["teammates_from_goal"] = [self.agent.friend_goal.location.dist(teammate.location) for teammate in teammates]
-
-                    self.agent.predictions["teammates_to_ball"] = [self.agent.ball.location.dist(teammate.location) for teammate in teammates]
-
+                    self.agent.predictions["teammates_from_goal"] = [self.agent.friend_goal.location.flat_dist(teammate.location) for teammate in teammates]
+                    self.agent.predictions["teammates_to_ball"] = [self.agent.ball.location.flat_dist(teammate.location) for teammate in teammates]
                     self.agent.predictions["can_shoot"] = not self.agent.predictions['self_to_ball'] == self.agent.predictions["teammates_from_goal"]
 
                     if self.agent.predictions['self_to_ball'] == min(self.agent.predictions['teammates_to_ball']):
