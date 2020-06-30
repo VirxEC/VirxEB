@@ -57,8 +57,8 @@ class Prediction(Thread):
                     else:
                         self.agent.playstyle = self.agent.playstyles.Neutral
 
-                elif self.agent.playstyle != self.agent.playstyles.Offensive:
-                    self.agent.playstyle = self.agent.playstyles.Offensive
+                elif self.agent.playstyle != self.agent.playstyles.Neutral:
+                    self.agent.playstyle = self.agent.playstyles.Neutral
 
                 is_own_goal = False
                 is_goal = False
