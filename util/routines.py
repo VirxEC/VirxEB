@@ -140,7 +140,7 @@ class Aerial():
         else:
             agent.controller.boost = agent.controller.throttle = 0
 
-        if T <= 0 or not shot_valid(agent, self, threshold=100):
+        if T <= 0 or not shot_valid(agent, self, target=self.target, threshold=100):
             agent.pop()
             agent.shooting = False
             agent.push(recovery(agent.friend_goal.location))

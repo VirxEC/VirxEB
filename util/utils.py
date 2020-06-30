@@ -102,8 +102,11 @@ def quadratic(a, b, c):
         return -1, -1
 
 
-def shot_valid(agent, shot, threshold=45):
+def shot_valid(agent, shot, threshold=45, target=None):
     # Returns True if the ball is still where the shot anticipates it to be
+    if target == None:
+        target = shot.ball_location
+
     # First finds the two closest slices in the ball prediction to shot's intercept_time
     # threshold controls the tolerance we allow the ball to be off by
     slices = agent.get_ball_prediction_struct().slices
@@ -122,7 +125,7 @@ def shot_valid(agent, shot, threshold=45):
     # Determining exactly where the ball will be at the given shot's intercept_time
     predicted_ball_location = Vector3(slices[soonest].physics.location) + (slopes * time_from_soonest)
     # Comparing predicted location with where the shot expects the ball to be
-    return (shot.ball_location - predicted_ball_location).magnitude() < threshold
+    return (target - predicted_ball_location).magnitude() < threshold
 
 
 def side(x):
