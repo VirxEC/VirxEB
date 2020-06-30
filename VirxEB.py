@@ -175,6 +175,9 @@ class VirxEB(GoslingAgent):
             else:
                 self.backcheck()
 
+        if self.is_clear() or self.stack[0].__class__.__name__ == "goto":
+            self.smart_shot(self.offensive_shots[0])
+
     def playstyle_attack(self):
         self.panic_at(2500, 1500)
 
@@ -183,9 +186,11 @@ class VirxEB(GoslingAgent):
         if not self.is_clear():
             method_name = self.stack[0].__class__.__name__
 
-        if not self.shooting and (self.is_clear() or method_name == "goto" or method_name == "atba" or self.shooting_short):
+        if not self.shooting and (self.is_clear() or method_name == "atba" or self.shooting_short):
             if self.me.airborne and self.is_clear():
                 self.recover_from_air()
+            elif self.me.boost == 0:
+                self.backcheck(simple=True)
             else:
                 for o_shot in self.offensive_shots:
                     self.line(*o_shot, self.renderer.team_color(alt_color=True))
@@ -196,26 +201,15 @@ class VirxEB(GoslingAgent):
                     if shot != None:
                         self.clear()
                         self.shoot_from(shot, defend=False)
-                    elif self.is_clear():
-                        self.push(atba())
-                elif not method_name == "atba":
-                    found_shot = False
+                elif self.can_shoot == None:
+                    for o_shot in self.offensive_shots:
+                        shot = self.get_shot(o_shot)
+                        if shot != None:
+                            self.clear()
+                            self.shoot_from(shot, defend=False)
 
-                    if self.can_shoot == None:
-                        for o_shot in self.offensive_shots:
-                            shot = self.get_shot(o_shot)
-                            if shot != None:
-                                self.clear()
-                                self.shoot_from(shot, defend=False)
-                                found_shot = True
-
-                    if not found_shot and not method_name == "goto":
-                        if self.me.boost < 36 and self.ball.latest_touched_team == self.team:
-                            self.goto_nearest_boost()
-                        elif self.me.boost < 50 and self.ball.latest_touched_team == self.team:
-                            self.goto_nearest_boost(only_small=True)
-                        elif not self.backcheck() and self.me.boost < 50:
-                            self.goto_nearest_boost(only_small=True)
+            if self.is_clear():
+                self.push(atba())
 
     def get_shot(self, target, cap=6):
         shots = []
@@ -236,7 +230,7 @@ class VirxEB(GoslingAgent):
                 shot_class = shot.__class__.__name__
 
                 if shot_class == "Aerial":
-                    intercept = shot.ball_location
+                    intercept = shot.target
                 elif shot_class == "aerial_shot":
                     intercept = shot.intercept
                 elif shot_class == "jump_shot":
@@ -309,7 +303,7 @@ class VirxEB(GoslingAgent):
                 if self_is_farthest:
                     bc_y = max(1024, ball_loc - 1000) * side(not self.team)
 
-                self.push(goto(Vector3(bc_x, bc_y, 0)))
+                self.push(goto(Vector3(bc_x, bc_y, 17)))
             else:
                 self.push(goto(self.friend_goal.location))
 
@@ -323,13 +317,15 @@ class VirxEB(GoslingAgent):
 
     def do_kickoff(self):
         if len(self.friends) > 0:
+            try:
+                min_distance = min(self.predictions['teammates_to_ball'])
+                max_distance = max(self.predictions['teammates_to_ball'])
+            except ValueError:
+                return
 
-            min_distance = min(self.predictions['teammates_from_goal'])
-            max_distance = max(self.predictions['teammates_from_goal'])
-
-            if min_distance - 5 < self.predictions['self_from_goal'] and self.predictions['self_from_goal'] < min_distance + 5:
+            if min_distance - 5 < self.predictions['self_to_ball'] and self.predictions['self_to_ball'] < min_distance + 5:
                 self.offensive_kickoff()
-            elif max_distance - 5 < self.predictions['self_from_goal'] and self.predictions['self_from_goal'] < max_distance + 5:
+            elif max_distance - 5 < self.predictions['self_to_ball'] and self.predictions['self_to_ball'] < max_distance + 5:
                 self.clear()
 
                 self.playstyle = self.playstyles.Defensive

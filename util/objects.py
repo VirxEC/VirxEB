@@ -43,7 +43,7 @@ class GoslingAgent(BaseAgent):
         self.my_score = 0
         self.foe_score = 0
 
-        self.playstyles = Playstyle()
+        self.playstyles = Playstyle
         self.playstyle = self.playstyles.Neutral
 
         self.can_shoot = None
@@ -84,6 +84,9 @@ class GoslingAgent(BaseAgent):
 
         self.prediction = Prediction(self)
 
+        self.prediction.start()
+        self.gui.start()
+
     @staticmethod
     def is_hot_reload_enabled():
         return False
@@ -96,10 +99,6 @@ class GoslingAgent(BaseAgent):
                 i, boost.location, boost.is_full_boost))
         self.refresh_player_lists(packet)
         self.ball.update(packet)
-
-        self.prediction.start()
-
-        self.gui.start()
 
         self.init()
 
@@ -479,7 +478,7 @@ class Vector3:
 
     def magnitude(self):
         # Magnitude() returns the length of the vector
-        return math.sqrt((self[0]*self[0]) + (self[1] * self[1]) + (self[2] * self[2]))
+        return math.sqrt(self[0] ** 2 + self[1] ** 2 + self[2] ** 2)
 
     def normalize(self, return_magnitude=False):
         # Normalize() returns a Vector3 that shares the same direction but has a length of 1.0
@@ -495,7 +494,8 @@ class Vector3:
 
     def norm(self):
         """
-        Returns the Euclidean length of a vector
+        This is NOT related to normalize!!!
+        Returns the Euclidean length of the given vector
         """
         return math.sqrt(self.dot(self))
 

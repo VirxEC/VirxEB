@@ -4,13 +4,13 @@ from util.utils import (Vector3, backsolve, cap, defaultPD, defaultThrottle,
 import math
 
 max_speed = 2300
-boost_accel = 1060
+boost_accel = 991 + (2/3)
 throttle_accel = 2/3 * 100
-boost_per_second = 30
+boost_per_second = 33 + (1/3)
 gravity = Vector3(0, 0, -650)
 jump_max_duration = 0.2
 jump_speed = 291 + (2/3)
-jump_acc = 1458 + (2/3)
+jump_acc = 1458 + (1/3)
 
 
 class atba():
@@ -77,6 +77,7 @@ class Aerial():
         if self.time == -1:
             elapsed = 0
             self.time = agent.time
+            print(f"VirxEB ({agent.index}): Enter aerial - Hit ball at {str(self.target.int())} in {self.intercept_time - agent.time}s")
         else:
             elapsed = agent.time - self.time
 
