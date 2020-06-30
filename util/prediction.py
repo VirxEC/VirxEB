@@ -1,4 +1,4 @@
-from threading import Thread, Event
+from threading import Event, Thread
 from traceback import print_exc
 
 from rlbot.utils.structures.quick_chats import QuickChats

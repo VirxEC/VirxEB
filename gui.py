@@ -1,7 +1,7 @@
 from os import path
 from threading import Thread
-
-from tkinter import Tk, ttk, BooleanVar, StringVar, HORIZONTAL, PhotoImage
+from tkinter import HORIZONTAL, BooleanVar, PhotoImage, StringVar, Tk, ttk
+from traceback import print_exc
 
 
 class Gui(Thread):
@@ -127,4 +127,7 @@ class Gui(Thread):
         debug_ball_path_precision.set(self.agent.debug_ball_path_precision)
         debug_ball_path_precision.pack()
 
-        root.mainloop()
+        try:
+            root.mainloop()
+        except Exception:
+            print_exc()

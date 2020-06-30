@@ -77,7 +77,7 @@ class Aerial():
         if self.time == -1:
             elapsed = 0
             self.time = agent.time
-            print(f"VirxEB ({agent.index}): Enter aerial - Hit ball at {str(self.target.int())} in {self.intercept_time - agent.time}s")
+            print(f"VirxEB ({agent.index}): Enter aerial - Hit ball at {str(self.target.int())} in {self.intercept_time - self.time}s")
         else:
             elapsed = agent.time - self.time
 

@@ -1,5 +1,6 @@
 import math
 from enum import Enum
+from traceback import print_exc
 
 import rlbot.utils.structures.game_data_struct as game_data_struct
 from rlbot.agents.base_agent import BaseAgent, SimpleControllerState
@@ -186,32 +187,36 @@ class GoslingAgent(BaseAgent):
         self.debug[1].append(str(item))
 
     def get_output(self, packet):
-        # Reset controller
-        self.controller.__init__()
-        # Get ready, then preprocess
-        if not self.ready:
-            self.get_ready(packet)
-        self.preprocess(packet)
+        try:
+            # Reset controller
+            self.controller.__init__()
+            # Get ready, then preprocess
+            if not self.ready:
+                self.get_ready(packet)
+            self.preprocess(packet)
 
-        # Run our strategy code
-        self.run()
-        # run the routine on the end of the stack
-        if not self.is_clear():
-            self.stack[-1].run(self)
+            # Run our strategy code
+            self.run()
+            # run the routine on the end of the stack
+            if not self.is_clear():
+                self.stack[-1].run(self)
 
-        if self.debugging:
-            if self.debug_3d_bool:
-                self.debug_stack()
+            if self.debugging:
+                if self.debug_3d_bool:
+                    self.debug_stack()
 
-            if self.debug_2d_bool:
-                self.debug_2d()
-        else:
-            self.debug = [[], []]
+                if self.debug_2d_bool:
+                    self.debug_2d()
+            else:
+                self.debug = [[], []]
 
-        if self.disable_driving:
+            if self.disable_driving:
+                return SimpleControllerState()
+            else:
+                return self.controller
+        except Exception:
+            print_exc()
             return SimpleControllerState()
-        else:
-            return self.controller
 
     def init(self):
         # override this with any init code
