@@ -2,8 +2,8 @@
 
 + [RLBot](http://www.rlbot.org/)
 + [RLBot Youtube](https://www.youtube.com/channel/UCu8scB_k94Kh-iO979QTDJA)
-+ [VirxEB on VirxEC Showcase](https://virxeb.virxcase.ga)
-+ [VirxEC Showcase](https://www.virxcase.ga)
++ [VirxEB on VirxEC Showcase](https://virxeb.virxcase.dev)
++ [VirxEC Showcase](https://www.virxcase.dev)
 
 ## VirxEB
 
