@@ -139,7 +139,7 @@ def sign(x):
     # returns the sign of a number, -1, 0, +1
     if x < 0:
         return -1
-    
+
     if x > 0:
         return 1
 
@@ -184,7 +184,7 @@ def get_weight(agent, shot=None, index=None):
         return agent.max_shot_weight - math.ceil(index / 2)
 
     if shot is not None:
-        for shot_list in (agent.offensive_shots, agent.defensive_shots[0], agent.defensive_shots[1]):
+        for shot_list in (agent.offensive_shots, agent.defensive_shots):  # [0], agent.defensive_shots[1]
             try:
                 return agent.max_shot_weight - math.ceil(shot_list.index(shot) / 2)
             except ValueError:

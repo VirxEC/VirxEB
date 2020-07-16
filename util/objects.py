@@ -130,8 +130,8 @@ class GoslingAgent(BaseAgent):
                 (self.foe_goal.left_post, self.foe_goal.right_post),  # Weight -> 3
                 (Vector(3100, foe_team * 3250, 100), Vector(2900, foe_team * 3250, 100)),  # Weight -> 2
                 (Vector(-3100, foe_team * 3250, 100), Vector(-2900, foe_team * 3250, 100)),  # Weight -> 2
-            ),
-            (
+            # ),
+            # (
                 (Vector(-3600, z=100), Vector(-2900, z=100)),  # Weight -> 1
                 (Vector(3600, z=100), Vector(2900, z=100)),  # Weight -> 1
             )
