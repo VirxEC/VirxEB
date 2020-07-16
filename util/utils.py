@@ -125,7 +125,7 @@ def shot_valid(agent, shot, threshold=45, target=None):
     # Determining exactly where the ball will be at the given shot's intercept_time
     predicted_ball_location = Vector(*soonest) + (slopes * time_from_soonest)
     # Comparing predicted location with where the shot expects the ball to be
-    return (target - predicted_ball_location).magnitude() < threshold
+    return target.dist(predicted_ball_location) < threshold
 
 
 def side(x):

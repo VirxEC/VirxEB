@@ -160,7 +160,7 @@ class VirxEB(GoslingAgent):
                 if self.is_clear():
                     if not self.panic and self.me.boost < 50 and self.ball.latest_touched_team is self.team:
                         self.goto_nearest_boost(only_small=True)
-                    else:
+                    elif self.predictions['self_from_goal'] > 750:
                         self.backcheck(simple=True)
 
     def playstyle_neutral(self):
@@ -178,7 +178,7 @@ class VirxEB(GoslingAgent):
                             self.goto_nearest_boost(only_small=True)
                     else:
                         self.backcheck()
-                elif self.odd_tick == 0 and self.shooting and not self.me.airborne:
+                elif self.odd_tick % 2 == 0 and self.shooting and not self.me.airborne:
                     shot = self.get_shot(self.offensive_shots[0])
 
                     if shot is not None:
@@ -186,7 +186,7 @@ class VirxEB(GoslingAgent):
                             self.clear()
                             self.shoot_from(shot)
 
-                if self.is_clear() or self.stack[0].__class__.__name__ in {"goto", "goto_boost"} and self.odd_tick:
+                if self.is_clear() or self.stack[0].__class__.__name__ in {"goto", "goto_boost"} and self.odd_tick == 0:
                     if not self.smart_shot(self.offensive_shots[0]) and self.is_clear():
                         self.backcheck()
 
@@ -223,7 +223,7 @@ class VirxEB(GoslingAgent):
                             self.push(atba())
                         elif self.predictions['self_to_ball'] > 1000:
                             self.push(atba(exit_distance=750, exit_flip=False))
-                elif self.odd_tick == 0 and self.shooting:
+                elif self.odd_tick % 2 == 0 and self.shooting:
                     if self.predictions['goal'] or (self.foe_goal.location.dist(self.ball.location) <= 1500 and (self.predictions['closest_enemy'] > 1400 or self.foe_goal.location.dist(self.me.location) < self.predictions['closest_enemy'] + 250)):
                         shot = self.get_shot(self.offensive_shots[0], weight=self.max_shot_weight)
 
@@ -235,7 +235,7 @@ class VirxEB(GoslingAgent):
                             elif shot['intercept_time'] <= min(self.shot_time + (self.max_shot_weight - self.shot_weight / 3), 5):
                                 self.clear()
                                 self.shoot_from(shot)
-                    else:
+                    elif self.odd_tick == 0:
                         for i, o_shot in enumerate(self.offensive_shots):
                             shot_weight = get_weight(self, index=i)
 
@@ -253,11 +253,12 @@ class VirxEB(GoslingAgent):
                                     self.clear()
                                     self.shoot_from(shot)
 
-            if self.is_clear():
-                if self.team == 1 and self.ball.location.y > -750:
-                    self.backcheck()
-                elif self.team == 0 and self.ball.location.y < 750:
-                    self.backcheck()
+                if self.is_clear() or self.stack[0].__class__.__name__ in {"goto", "goto_boost"} and self.odd_tick == 0:
+                    if not self.smart_shot(self.offensive_shots[0]) and self.is_clear():
+                        if self.team == 1 and self.ball.location.y > -750:
+                            self.backcheck()
+                        elif self.team == 0 and self.ball.location.y < 750:
+                            self.backcheck()
 
     def get_shot(self, target, weight=None, cap=None):
         shots = (find_hits(self, {"target": target}, cap_=6 if cap is None else cap))['target']

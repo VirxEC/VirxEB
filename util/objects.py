@@ -218,9 +218,9 @@ class GoslingAgent(BaseAgent):
 
         if self.odd_tick % 2 == 0:  # This is ran @ 60 tps
             self.predictions['ball_struct'] = self.get_ball_prediction_struct()
-
-        if self.odd_tick == 0:  # This is ran @ 30 tps
             self.prediction.event.set()
+
+        # if self.odd_tick == 0:  # This is ran @ 30 tps
 
         self.odd_tick += 1
 
@@ -265,8 +265,7 @@ class GoslingAgent(BaseAgent):
                 return SimpleControllerState()
             else:
                 return self.controller
-        except Exception as err:
-            print(err)
+        except Exception:
             print_exc()
             return SimpleControllerState()
 

@@ -160,8 +160,8 @@ class Aerial():
                 agent.controller.throttle = cap(0.5 * throttle_accel * T * T, 0, 1)
         else:
             agent.controller.boost = agent.controller.throttle = 0
-        
-        still_valid = shot_valid(agent, self, threshold=150, target=self.target)
+
+        still_valid = shot_valid(agent, self, threshold=250, target=self.target)
 
         if T <= 0 or not still_valid:
             if not still_valid:
