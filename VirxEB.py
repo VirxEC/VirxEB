@@ -131,7 +131,7 @@ class VirxEB(GoslingAgent):
             if not self.shooting:
                 self.panic = True
 
-                for shot in self.defensive_shots:  # [self.odd_tick % 2]
+                for shot in self.defensive_shots:
                     if self.smart_shot(shot, cap=4):
                         return
 

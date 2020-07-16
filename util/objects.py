@@ -130,8 +130,6 @@ class GoslingAgent(BaseAgent):
                 (self.foe_goal.left_post, self.foe_goal.right_post),  # Weight -> 3
                 (Vector(3100, foe_team * 3250, 100), Vector(2900, foe_team * 3250, 100)),  # Weight -> 2
                 (Vector(-3100, foe_team * 3250, 100), Vector(-2900, foe_team * 3250, 100)),  # Weight -> 2
-            # ),
-            # (
                 (Vector(-3600, z=100), Vector(-2900, z=100)),  # Weight -> 1
                 (Vector(3600, z=100), Vector(2900, z=100)),  # Weight -> 1
             )
@@ -219,8 +217,6 @@ class GoslingAgent(BaseAgent):
         if self.odd_tick % 2 == 0:  # This is ran @ 60 tps
             self.predictions['ball_struct'] = self.get_ball_prediction_struct()
             self.prediction.event.set()
-
-        # if self.odd_tick == 0:  # This is ran @ 30 tps
 
         self.odd_tick += 1
 
