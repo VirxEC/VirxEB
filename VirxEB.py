@@ -262,11 +262,12 @@ class VirxEB(GoslingAgent):
     def get_shot(self, target, weight=None, cap=None):
         shots = (find_hits(self, {"target": target}, cap_=6 if cap is None else cap))['target']
 
-        if (len(self.friends) > 0 or len(self.foes) > 1) and self.me.boost > 40:
+        if (len(self.friends) > 0 or len(self.foes) > 1) and self.me.boost > 24:
             shots = list(itertools.chain(shots, (find_risky_hits(self, {"target": target}, cap_=4 if cap is None or cap > 4 else cap))['target']))
 
         if len(shots) > 0:
             shots.sort(key=lambda shot: shot.intercept_time)
+
             shot = shots[0]
 
             return {

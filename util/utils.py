@@ -97,8 +97,8 @@ def quadratic(a, b, c):
     inside = math.sqrt((b*b) - (4*a*c))
     if a != 0:
         return (-b + inside)/(2*a), (-b - inside)/(2*a)
-    else:
-        return -1, -1
+
+    return -1, -1
 
 
 def shot_valid(agent, shot, threshold=45, target=None):
@@ -108,7 +108,7 @@ def shot_valid(agent, shot, threshold=45, target=None):
 
     # First finds the two closest slices in the ball prediction to shot's intercept_time
     # threshold controls the tolerance we allow the ball to be off by
-    slices = agent.get_ball_prediction_struct().slices
+    slices = agent.predictions['ball_struct'].slices
     soonest = 0
     latest = len(slices)-1
     while len(slices[soonest:latest+1]) > 2:
@@ -139,10 +139,11 @@ def sign(x):
     # returns the sign of a number, -1, 0, +1
     if x < 0:
         return -1
-    elif x > 0:
+    
+    if x > 0:
         return 1
-    else:
-        return 0
+
+    return 0
 
 
 def steerPD(angle, rate):

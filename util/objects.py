@@ -35,7 +35,7 @@ class GoslingAgent(BaseAgent):
         ]
 
         base_boost_accel = 991 + (2/3)
-
+    
         boost_accel = [
             base_boost_accel,
             base_boost_accel * 1.5,
