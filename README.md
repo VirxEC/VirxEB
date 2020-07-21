@@ -9,6 +9,10 @@
 
 This is a bot for Rocket League by VirxEC that was built on the RLBot framework.
 
+### How to run VirxEB
+
+VirxEB is available in the RLBotGUI's Community Botpack. [Get the RLBotGUI](https://rlbot.org/).
+
 ## Rocket League
 
 Rocket League is a game that's avalible for PC (Windows only), Xbox, PS and Switch.
