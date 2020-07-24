@@ -20,11 +20,49 @@ class Playstyle(Enum):
 class GoslingAgent(BaseAgent):
     def __init__(self, name, team, index):
         super().__init__(name, team, index)
-        self.print("Initalizing 2 threads...")
-        self.gui = Gui(self)
+
+        self.tournament = True
+        self.print("Initalizing thread(s)...")
+
+        if not self.tournament:
+            self.gui = Gui(self)
+            self.print("Starting the GUI...")
+            self.gui.start()
+        else:
+            print(f"This is a tournament! YAY!!! Thanks for letting me, {self.name}, participate. Just for you, I'll start in minimal output mode.")
+
+        self.predictions = {
+            "closest_enemy": 0,
+            "own_goal": False,
+            "goal": False,
+            "ball_struct": None,
+            "team_from_goal": (),
+            "team_to_ball": (),
+            "self_from_goal": 0,
+            "self_to_ball": 0
+        }
+
+        self.goalie = False
+        self.air_bud = False
+
+        self.debug = [[], []]
+        self.debugging = False
+        self.debug_lines = True
+        self.debug_3d_bool = True
+        self.debug_stack_bool = True
+        self.debug_2d_bool = False
+        self.show_coords = False
+        self.debug_ball_path = False
+        self.debug_ball_path_precision = 10
+
+        self.disable_driving = False
+
         self.prediction = Prediction(self)
+        self.print("Starting the predictive service...")
+        self.prediction.start()
 
     def initialize_agent(self):
+        self.print("Building game information")
         mutators = self.get_match_settings().MutatorSettings()
 
         gravity = [
@@ -35,7 +73,7 @@ class GoslingAgent(BaseAgent):
         ]
 
         base_boost_accel = 991 + (2/3)
-    
+
         boost_accel = [
             base_boost_accel,
             base_boost_accel * 1.5,
@@ -67,7 +105,7 @@ class GoslingAgent(BaseAgent):
         self.controller = SimpleControllerState()
 
         self.kickoff_flag = False
-        self.kickoff_done = False
+        self.kickoff_done = True
 
         self.last_time = 0
         self.my_score = 0
@@ -84,38 +122,9 @@ class GoslingAgent(BaseAgent):
 
         self.odd_tick = 0  # Use this for thing that can be run at 30 or 60 tps instead of 120
 
-        self.debug = [[], []]
-        self.debugging = False
-        self.debug_lines = True
-        self.debug_3d_bool = True
-        self.debug_stack_bool = True
-        self.debug_2d_bool = False
-        self.show_coords = False
-        self.debug_ball_path = False
-        self.debug_ball_path_precision = 10
-
-        self.disable_driving = False
-
-        self.print("Starting the GUI...")
-        self.gui.start()
-
-        self.print("Starting the predictive service...")
-        self.predictions = {
-            "closest_enemy": 0,
-            "own_goal": False,
-            "goal": False,
-            "ball_struct": None,
-            "teammates_from_goal": (),
-            "teammates_to_ball": (),
-            "self_from_goal": 0,
-            "self_to_ball": 0
-        }
-
-        self.prediction.start()
-
     @staticmethod
     def is_hot_reload_enabled():
-        return True
+        return False
 
     def get_ready(self, packet):
         field_info = self.get_field_info()
@@ -124,31 +133,38 @@ class GoslingAgent(BaseAgent):
         self.ball.update(packet)
 
         foe_team = -1 if self.team == 1 else 1
+        team = -foe_team
 
         self.defensive_shots = (
-            (
-                (self.foe_goal.left_post, self.foe_goal.right_post),  # Weight -> 3
-                (Vector(3100, foe_team * 3250, 100), Vector(2900, foe_team * 3250, 100)),  # Weight -> 2
-                (Vector(-3100, foe_team * 3250, 100), Vector(-2900, foe_team * 3250, 100)),  # Weight -> 2
-                (Vector(-3600, z=100), Vector(-2900, z=100)),  # Weight -> 1
-                (Vector(3600, z=100), Vector(2900, z=100)),  # Weight -> 1
-            )
+            (self.foe_goal.left_post, self.foe_goal.right_post),  # Weight -> 4
+            (Vector(4000, foe_team * 3250, 100), Vector(2750, foe_team * 3250, 100)),  # Weight -> 3
+            (Vector(-4000, foe_team * 3250, 100), Vector(-2750, foe_team * 3250, 100)),  # Weight -> 3
+            (Vector(-3600, z=100), Vector(-1000, z=500)),  # Weight -> 2
+            (Vector(3600, z=100), Vector(1000, z=500))  # Weight -> 2
+        )
+
+        self.panic_shots = (
+            (Vector(3100, team * 3620, 100), Vector(3100, team * 5120, 100)),  # Weight -> 1
+            (Vector(-3100, team * 3620, 100), Vector(-3100, team * 5120, 100))  # Weight -> 1
         )
 
         # (self.friend_goal.right_post, self.friend_goal.left_post) => Weight -> 0
         # Short short => Weight -> -1
 
         self.offensive_shots = (
-            (self.foe_goal.left_post, self.foe_goal.right_post),  # Weight -> 3
-            (Vector(foe_team * 893, foe_team * 5120, 100), Vector(foe_team * 893, foe_team * 4720, 320)),  # Weight -> 2
-            (Vector(-foe_team * 893, foe_team * 5120, 100), Vector(-foe_team * 893, foe_team * 4720, 320))  # Weight -> 2
+            (self.foe_goal.left_post, self.foe_goal.right_post),  # Weight -> 4
+            (Vector(foe_team * 893, foe_team * 5120, 100), Vector(foe_team * 893, foe_team * 4720, 320)),  # Weight -> 3
+            (Vector(-foe_team * 893, foe_team * 5120, 100), Vector(-foe_team * 893, foe_team * 4720, 320))  # Weight -> 3
         )
 
-        self.max_shot_weight = 3
+        self.best_shot = (Vector(foe_team * 650, foe_team * 5125, 320), Vector(-foe_team * 650, foe_team * 5125, 320))
+
+        self.max_shot_weight = 4
 
         self.init()
 
         self.ready = True
+        self.print("Built")
 
     def refresh_player_lists(self, packet):
         # Useful to keep separate from get_ready because humans can join/leave a match
@@ -174,8 +190,9 @@ class GoslingAgent(BaseAgent):
             self.renderer.draw_line_3d(start, end, color if type(color) != list else self.renderer.create_color(255, *color))
 
     def print(self, item):
-        team = "Blue" if self.team == 0 else "Red"
-        print(f"{self.name} ({team}): {item}")
+        if not self.tournament:
+            team = "Blue" if self.team == 0 else "Red"
+            print(f"{self.name} ({team}): {item}")
 
     def dbg_3d(self, item):
         self.debug[0].append(str(item))
@@ -188,9 +205,14 @@ class GoslingAgent(BaseAgent):
         self.shot_weight = -1
         self.shot_time = -1
         self.stack = []
+        return 'asdf'  # This is here in case I call this instead of is_clear() - It should throw an error if I do
 
     def is_clear(self):
         return len(self.stack) < 1
+
+    @staticmethod
+    def round_1000(value):
+        return round(value * 1000) / 1000
 
     def preprocess(self, packet):
         if packet.num_cars != len(self.friends)+len(self.foes)+1:
@@ -232,38 +254,61 @@ class GoslingAgent(BaseAgent):
                 self.get_ready(packet)
             self.preprocess(packet)
 
-            if self.game.round_active:
+            if self.me.demolished:
+                if not self.is_clear():
+                    self.clear()
+            elif self.game.round_active:
+                self.dbg_3d(self.playstyle.name)
                 self.run()  # Run strategy code; This is a very expensive function to run
 
                 # run the routine on the end of the stack
                 if not self.is_clear():
                     self.stack[-1].run(self)
 
-            if self.debugging:
-                if self.debug_3d_bool:
-                    if self.debug_stack_bool:
-                        self.debug[0] = itertools.chain(self.debug[0], ("STACK:",), (item.__class__.__name__ for item in reversed(self.stack)))
+                if self.is_clear() or self.stack[0].__class__.__name__ not in {'Aerial', 'jump_shot', 'block_ground_shot'}:
+                    self.shooting = False
+                    self.shot_weight = -1
+                    self.shot_time = -1
 
-                    self.renderer.draw_string_3d(self.me.location.tuple(), 2, 2, "\n".join(self.debug[0]), self.renderer.team_color(alt_color=True))
+                if self.debugging:
+                    if self.debug_3d_bool:
+                        if self.debug_stack_bool:
+                            self.debug[0] = itertools.chain(self.debug[0], ("STACK:",), (item.__class__.__name__ for item in reversed(self.stack)))
 
-                    self.debug[0] = []
+                        self.renderer.draw_string_3d(self.me.location.tuple(), 2, 2, "\n".join(self.debug[0]), self.renderer.team_color(alt_color=True))
 
-                if self.debug_2d_bool:
-                    if self.show_coords:
-                        self.debug[1].insert(0, str(self.me.location.int()))
+                        self.debug[0] = []
 
-                    self.renderer.draw_string_2d(20, 300, 2, 2, "\n".join(self.debug[1]), self.renderer.team_color(alt_color=True))
-                    self.debug[1] = []
-            else:
-                self.debug = [[], []]
+                    if self.debug_2d_bool:
+                        if self.show_coords:
+                            self.debug[1].insert(0, str(self.me.location.int()))
 
-            if self.disable_driving:
-                return SimpleControllerState()
-            else:
-                return self.controller
+                        if self.stack[0].__class__.__name__ in {'Aerial', 'jump_shot', 'block_ground_shot'}:
+                            self.dbg_2d(self.round_1000(self.stack[0].intercept_time - self.time))
+
+                        self.renderer.draw_string_2d(20, 300, 2, 2, "\n".join(self.debug[1]), self.renderer.team_color(alt_color=True))
+                        self.debug[1] = []
+
+                    if self.debug_ball_path:
+                        ball_prediction = self.predictions['ball_struct']
+
+                        if ball_prediction is not None:
+                            for i in range(0, ball_prediction.num_slices - (ball_prediction.num_slices % self.debug_ball_path_precision) - self.debug_ball_path_precision, self.debug_ball_path_precision):
+                                self.line(
+                                    ball_prediction.slices[i].physics.location,
+                                    ball_prediction.slices[i + self.debug_ball_path_precision].physics.location
+                                )
+                else:
+                    self.debug = [[], []]
+
+            return SimpleControllerState() if self.disable_driving else self.controller
         except Exception:
+            print(self.name)
             print_exc()
             return SimpleControllerState()
+
+    def test(self):
+        pass
 
     def run(self):
         pass
@@ -280,7 +325,7 @@ class car_object:
     # and are updated by GoslingAgent as the game runs
     def __init__(self, index, packet=None):
         self.location = Vector()
-        self.orientation = Matrix3(0, 0, 0)
+        self.orientation = Matrix3()
         self.velocity = Vector()
         self.angular_velocity = Vector()
         self.demolished = False
@@ -298,8 +343,8 @@ class car_object:
 
     def update(self, packet):
         car = packet.game_cars[self.index]
-        self.location.x, self.location.y, self.location.z = car.physics.location.x, car.physics.location.y, car.physics.location.z
-        self.velocity.x, self.velocity.y, self.velocity.z = car.physics.velocity.x, car.physics.velocity.y, car.physics.velocity.z
+        self.location = Vector(car.physics.location.x, car.physics.location.y, car.physics.location.z)
+        self.velocity = Vector(car.physics.velocity.x, car.physics.velocity.y, car.physics.velocity.z)
         self.orientation = Matrix3(car.physics.rotation.pitch, car.physics.rotation.yaw, car.physics.rotation.roll)
         self.angular_velocity = self.orientation.dot(car.physics.angular_velocity)
         self.demolished = car.is_demolished
@@ -334,8 +379,8 @@ class ball_object:
 
     def update(self, packet):
         ball = packet.game_ball
-        self.location.x, self.location.y, self.location.z = ball.physics.location.x, ball.physics.location.y, ball.physics.location.z
-        self.velocity.x, self.velocity.y, self.velocity.z = ball.physics.velocity.x, ball.physics.velocity.y, ball.physics.velocity.z
+        self.location = Vector(ball.physics.location.x, ball.physics.location.y, ball.physics.location.z)
+        self.velocity = Vector(ball.physics.velocity.x, ball.physics.velocity.y, ball.physics.velocity.z)
         self.latest_touched_time = ball.latest_touch.time_seconds
         self.latest_touched_team = ball.latest_touch.team
 
@@ -355,10 +400,10 @@ class goal_object:
     # This is a simple object that creates/holds goalpost locations for a given team (for soccer on standard maps only)
     def __init__(self, team):
         team = 1 if team == 1 else -1
-        self.location = Vector(0, team * 5100, 320)  # center of goal line
-        # Posts are closer to x=750, but this allows the bot to be a little more accurate
-        self.left_post = Vector(team * 725, team * 5100, 320)
-        self.right_post = Vector(-team * 725, team * 5100, 320)
+        self.location = Vector(0, team * 5120, 320)  # center of goal line
+        # Posts are closer to x=893, but this allows the bot to be a little more accurate
+        self.left_post = Vector(team * 800, team * 5125, 320)
+        self.right_post = Vector(-team * 800, team * 5125, 320)
 
 
 class game_object:
@@ -394,7 +439,7 @@ class Matrix3:
     # If you have a distance between the car and some object, ie ball.location - car.location,
     # you can convert that to local coordinates by dotting it with this matrix
     # ie: local_ball_location = Matrix3.dot(ball.location - car.location)
-    def __init__(self, pitch, yaw, roll):
+    def __init__(self, pitch=0, yaw=0, roll=0):
         CP = math.cos(pitch)
         SP = math.sin(pitch)
         CY = math.cos(yaw)
@@ -416,7 +461,7 @@ class Matrix3:
         return Vector(self.forward.dot(vector), self.left.dot(vector), self.up.dot(vector))
 
 
-# With this new setup, Vector supports 2D and 3D Vectors, as well as calculations between them
+# With this new setup, Vector supports 1D, 2D and 3D Vectors, as well as calculations between them
 @dataclass
 class Vector:
     # These values can be ints or floats, with thier defaults being 0

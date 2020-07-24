@@ -1,0 +1,42 @@
+Fixed defensive shots
+    Expanded the weight 3 defensive shot
+    Fixed the weight 1 defensive shots
+    Moved weight 1 defensive shots to 'panic_shots' that all have a weight of 1
+Enable/disable panic is now handled differently
+VirxEB will now double commit if he's about to:
+    Be scored on
+    Score
+New tournament mode (makes the GUI not start and won't print anything to the console)
+Added options in the GUI
+    Goalie mode
+    Air Bud mode
+VirxEB now understands demolitions
+Improved backchecks
+VirxEB should now break Rule 1's if it's with a teammate
+VirxEB now uses shot_shot instead of atba
+Fix goal posts
+    Fixed missing open nets
+Neutral playstyle changes
+    Goes for boost less
+    If VirxEB is too far from the ball, he'll get closer
+Defensive playstyle changes
+    Goes for boost more
+    If VirxEB is too far from his net, he'll go back
+Remove aerial_shot in favor of Aerial
+Backchecking/forechecking is handled differently
+    New method 'dynamic_backcheck'
+    New method 'retreat'
+Better corner kickoffs:
+    New replay 'left_kickoff'
+    New replay 'right_kickoff'
+    Removed method 'corner_kickoff'
+New shot 'best_shot' that's a shot on goal but more likely to go in
+Further improvements on methods in tools
+New method 'block_ground_shot'
+Changes to collecting boost
+    VirxEB will consider the closest 4 to his net, then goto the closest to himself
+    If VirxEB is going to a large boost, he won't goto a small boost first
+    VirxEB won't try to face the ball when going for a large boost
+Fixed goal/own goal prediction
+Method 'goto' now has a smart braking system
+Fixed find_risky_hits aerials

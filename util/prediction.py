@@ -1,4 +1,5 @@
 import itertools
+import math
 from threading import Event, Thread
 from traceback import print_exc
 
@@ -21,7 +22,7 @@ class Prediction(Thread):
                 can_shoot = True
 
                 if len(self.agent.foes) > 0:
-                    foe_distances = tuple(self.agent.ball.location.flat_dist(foe.location) for foe in self.agent.foes)
+                    foe_distances = tuple(self.agent.ball.location.flat_dist(foe.location) if not foe.demolished else math.inf for foe in self.agent.foes)
 
                     shoot_threshold = 4000
 
@@ -39,44 +40,51 @@ class Prediction(Thread):
 
                     self.agent.predictions['closest_enemy'] = min(foe_distances)
 
-                self.agent.predictions['self_from_goal'] = self.agent.friend_goal.location.flat_dist(self.agent.me.location)
-                self.agent.predictions['self_to_ball'] = self.agent.ball.location.flat_dist(self.agent.me.location)
+                self.agent.predictions['self_from_goal'] = self.agent.friend_goal.location.flat_dist(self.agent.me.location) if not self.agent.me.demolished else math.inf
+                self.agent.predictions['self_to_ball'] = self.agent.ball.location.flat_dist(self.agent.me.location) if not self.agent.me.demolished else math.inf
 
-                if len_friends > 0 and self.agent.ball_to_goal > 3750:
+                if self.agent.goalie:
+                    if self.agent.playstyle is not self.agent.playstyles.Defensive:
+                        self.agent.playstyle = self.agent.playstyles.Defensive
+                elif len_friends > 0:
                     teammates = tuple(itertools.chain(self.agent.friends, [self.agent.me]))
 
-                    self.agent.predictions["teammates_from_goal"] = tuple(self.agent.friend_goal.location.flat_dist(teammate.location) for teammate in teammates)
-                    self.agent.predictions["teammates_to_ball"] = tuple(self.agent.ball.location.flat_dist(teammate.location) for teammate in teammates)
+                    self.agent.predictions["team_from_goal"] = tuple(self.agent.friend_goal.location.flat_dist(teammate.location) if not teammate.demolished else math.inf for teammate in teammates)
+                    self.agent.predictions["team_to_ball"] = tuple(self.agent.ball.location.flat_dist(teammate.location) if not teammate.demolished else math.inf for teammate in teammates)
+
+                    not_closest_to_goal = self.agent.predictions['self_from_goal'] != min(self.agent.predictions["team_from_goal"])
 
                     if can_shoot:
-                        can_shoot = self.agent.predictions['self_from_goal'] != min(self.agent.predictions["teammates_from_goal"])
+                        can_shoot = not_closest_to_goal
 
-                    if self.agent.ball_to_goal > 4250 and self.agent.predictions['self_to_ball'] == min(self.agent.predictions['teammates_to_ball']):
-                        self.agent.playstyle = self.agent.playstyles.Offensive
-                    elif self.agent.ball_to_goal > 3750 and self.agent.predictions['self_to_ball'] == max(self.agent.predictions['teammates_to_ball']):
-                        if len_friends == 1:
-                            self.agent.playstyle = self.agent.playstyles.Neutral
+                    side = 1 if self.agent.team == 1 else -1
+
+                    if self.agent.ball.location.y * side < 2560:
+                        if self.agent.ball.location.y * side < 1280 and self.agent.predictions['self_to_ball'] == min(self.agent.predictions['team_to_ball']) and not_closest_to_goal:
+                            self.agent.playstyle = self.agent.playstyles.Offensive
+                        elif self.agent.ball.location.y * side < 2560 and self.agent.predictions['self_to_ball'] == max(self.agent.predictions['team_to_ball']):
+                            self.agent.playstyle = self.agent.playstyles.Neutral if len_friends == 1 else self.agent.playstyles.Defensive
                         else:
-                            self.agent.playstyle = self.agent.playstyles.Defensive
+                            self.agent.playstyle = self.agent.playstyles.Neutral
                     else:
                         self.agent.playstyle = self.agent.playstyles.Neutral
                 elif self.agent.playstyle != self.agent.playstyles.Neutral:
                     self.agent.playstyle = self.agent.playstyles.Neutral
 
                 if can_shoot:
-                    self.can_shoot = self.agent.time - 2.9
+                    self.can_shoot = self.agent.time - 2.95
 
                 is_own_goal = False
                 is_goal = False
 
                 if self.agent.predictions['ball_struct'] is not None:
-                    for i in range(0, self.agent.predictions['ball_struct'].num_slices, 2):
+                    for i in range(0, self.agent.predictions['ball_struct'].num_slices, 5):
                         prediction_slice = self.agent.predictions['ball_struct'].slices[i]
                         location = prediction_slice.physics.location
 
-                        if (self.agent.team == 0 and location.y <= -7680) or (self.agent.team == 1 and location.y >= 7680):
+                        if (self.agent.team == 0 and location.y <= -5212) or (self.agent.team == 1 and location.y >= 5212):
                             is_own_goal = True
-                        elif (self.agent.team == 0 and location.y >= 7680) or (self.agent.team == 1 and location.y <= -7680):
+                        elif (self.agent.team == 0 and location.y >= 5212) or (self.agent.team == 1 and location.y <= -5212):
                             is_goal = True
 
                 if is_own_goal:

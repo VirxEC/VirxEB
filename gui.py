@@ -13,15 +13,38 @@ class Gui(Thread):
         root = Tk()
 
         icon_path = path.join(path.dirname(path.abspath(__file__)), "./logo.png")
-        root.iconphoto(False, PhotoImage(file=icon_path))
+        root.iconphoto(True, PhotoImage(file=icon_path))
 
         team = "Blue" if self.agent.team == 0 else "Red"
 
-        bot_name = f"{self.agent.name} ({team})"
+        root.title("VirxEC/VirxEB")
 
-        root.title(bot_name)
+        root.geometry("240x275")
 
-        root.geometry("250x250")
+        title = ttk.Label(root, text=f"{self.agent.name} ({team}) by VirxEC")
+        title.pack()
+
+        # Goalie
+
+        goalie_bool = BooleanVar()
+        goalie_bool.set(self.agent.goalie)
+
+        def set_goalie():
+            self.agent.goalie = goalie_bool.get()
+
+        goalie_btn = ttk.Checkbutton(root, text='Goalie', variable=goalie_bool, command=set_goalie)
+        goalie_btn.pack()
+
+        # Air bud
+
+        air_bud_bool = BooleanVar()
+        air_bud_bool.set(self.agent.air_bud)
+
+        def set_air_bud():
+            self.agent.air_bud = air_bud_bool.get()
+
+        air_bud_btn = ttk.Checkbutton(root, text='Air Bud', variable=air_bud_bool, command=set_air_bud)
+        air_bud_btn.pack()
 
         # Disable driving
 
