@@ -67,7 +67,7 @@ class Prediction(Thread):
                         else:
                             self.agent.playstyle = self.agent.playstyles.Neutral
                     else:
-                        self.agent.playstyle = self.agent.playstyles.Neutral
+                        self.agent.playstyle = self.agent.playstyles.Defensive
                 elif self.agent.playstyle != self.agent.playstyles.Neutral:
                     self.agent.playstyle = self.agent.playstyles.Neutral
 
@@ -93,6 +93,8 @@ class Prediction(Thread):
 
                 self.agent.predictions["own_goal"] = is_own_goal
                 self.agent.predictions["goal"] = is_goal
+
+                self.agent.predictions['done'] = True
 
                 self.event.clear()
             except Exception:

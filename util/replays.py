@@ -9,7 +9,7 @@ class back_kickoff:
         if self.start_time == None:
             self.start_time = agent.time
 
-        time_elapsed = round((agent.time - self.start_time) * 10000) / 10000
+        time_elapsed = round(agent.time - self.start_time, 5)
 
         if (0 <= time_elapsed and time_elapsed <= 0.775) or (1.7 <= time_elapsed and time_elapsed <= 2.9333):
             agent.controller.throttle = 1
@@ -39,7 +39,7 @@ class left_kickoff:
         if self.start_time is None:
             self.start_time = agent.time
 
-        time_elapsed = round((agent.time - self.start_time) * 10000) / 10000
+        time_elapsed = round(agent.time - self.start_time, 5)
 
         if (0.0 <= time_elapsed and time_elapsed <= 0.0083) or (2.05 <= time_elapsed and time_elapsed <= 2.6167):
             agent.controller.steer = agent.controller.yaw = -1
@@ -68,7 +68,7 @@ class right_kickoff:
         if self.start_time is None:
             self.start_time = agent.time
 
-        time_elapsed = round((agent.time - self.start_time) * 10000) / 10000
+        time_elapsed = round(agent.time - self.start_time, 5)
 
         if (0.0 <= time_elapsed and time_elapsed <= 0.0083) or (2.05 <= time_elapsed and time_elapsed <= 2.6167):
             agent.controller.steer = agent.controller.yaw = 1

@@ -4,7 +4,7 @@ from util.routines import jump_shot, Aerial
 from util.utils import Vector, cap, find_slope, in_field, post_correction
 
 
-def find_hits(agent, target, cap_=6):
+def find_jump_shot(agent, target, cap_=6):
     # find_hits takes a tuple of (left,right) target pairs and finds routines that could hit the ball between those target pairs
     # find_hits is only meant for routines that require a defined intercept time/place in the future
     # Improvements means that this is now up to 585x faster than the og version
@@ -34,7 +34,7 @@ def find_hits(agent, target, cap_=6):
         i += 15 - cap(int(ball_velocity//150), 0, 13)
 
         # If the ball is above what this function can handle, don't bother with any further processing and skip to the next slice
-        if ball_location.z > 275:
+        if ball_location.z > 350:
             continue
 
         car_to_ball = ball_location - agent.me.location
@@ -71,14 +71,60 @@ def find_hits(agent, target, cap_=6):
                     # The slope represents how close the car is to the chosen vector, higher = better
                     # A slope of 1.0 would mean the car is 45 degrees off
                     slope = find_slope(best_shot_vector, car_to_ball)
-                    if forward_flag:
-                        if ball_location.z <= 275 and slope > 0:
-                            return jump_shot(ball_location, intercept_time, best_shot_vector, slope)
-                    elif backward_flag and ball_location.z <= 280 and slope > 1:
-                        return jump_shot(ball_location, intercept_time, best_shot_vector, slope, -1)
+                    if forward_flag and ball_location.z <= 275 and slope > 0:
+                        return jump_shot(ball_location, intercept_time, best_shot_vector)
+                    elif backward_flag and ball_location.z <= 250 and slope > 1:
+                        return jump_shot(ball_location, intercept_time, best_shot_vector, -1)
 
 
-def find_risky_hits(agent, target, cap_=4):
+def find_any_jump_shot(agent, cap_=3):
+    struct = agent.predictions['ball_struct']
+
+    if struct is None:
+        return
+
+    i = 5
+    while i < struct.num_slices:
+        intercept_time = struct.slices[i].game_seconds
+        time_remaining = intercept_time - agent.time
+
+        if time_remaining <= 0:
+            return
+
+        ball_location = Vector(struct.slices[i].physics.location.x, struct.slices[i].physics.location.y, struct.slices[i].physics.location.z)
+
+        if abs(ball_location.y) > 5212:
+            break
+
+        ball_velocity = Vector(struct.slices[i].physics.velocity.x, struct.slices[i].physics.velocity.y, struct.slices[i].physics.velocity.z).magnitude()
+
+        i += 15 - cap(int(ball_velocity//150), 0, 13)
+
+        if ball_location.z > 350:
+            continue
+
+        car_to_ball = ball_location - agent.me.location
+        direction, distance = car_to_ball.normalize(True)
+
+        forward_angle = direction.angle(agent.me.forward)
+        backward_angle = math.pi - forward_angle
+
+        forward_time = time_remaining - (forward_angle * 0.318)
+        backward_time = time_remaining - (backward_angle * 0.418)
+
+        forward_flag = forward_time > 0 and (distance*1.05 / forward_time) < (2275 if agent.me.boost > distance/100 else 1400)
+        backward_flag = distance < 1500 and backward_time > 0 and (distance*1.05 / backward_time) < 1200
+
+        # our current direction IS our best shot vector, as we just want to get to the ball as fast as possible
+        if (forward_flag or backward_flag) and is_fast_shot(agent.me.location, ball_location, intercept_time, agent.time, cap_):
+            slope = find_slope(direction, car_to_ball)
+            if forward_flag and ball_location.z <= 275 and slope > 0:
+                return jump_shot(ball_location, intercept_time, direction)
+            elif backward_flag and ball_location.z <= 250 and slope > 1.5:
+                return jump_shot(ball_location, intercept_time, direction, -1)
+
+
+def find_aerial(agent, target, cap_=4):
     struct = agent.predictions['ball_struct']
 
     if struct is None:
@@ -128,7 +174,7 @@ def find_risky_hits(agent, target, cap_=4):
                         return aerial
 
 
-def find_aerial(agent, cap_=3):
+def find_any_aerial(agent, cap_=3):
     struct = agent.predictions['ball_struct']
 
     if struct is None:

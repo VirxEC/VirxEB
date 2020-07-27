@@ -1,7 +1,6 @@
-import math
 from queue import Full
 
-from util.objects import Vector
+from util.agent import math, Vector
 
 
 def almost_equals(x, y, threshold):
@@ -188,7 +187,7 @@ def get_weight(agent, shot=None, index=None):
             return agent.max_shot_weight + 1
 
         if shot in agent.panic_shots:
-            return 1
+            return agent.max_shot_weight
 
         for shot_list in (agent.offensive_shots, agent.defensive_shots):
             try:

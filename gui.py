@@ -17,12 +17,15 @@ class Gui(Thread):
 
         team = "Blue" if self.agent.team == 0 else "Red"
 
-        root.title("VirxEC/VirxEB")
+        root.title("VirxEC/VirxERLU")
 
-        root.geometry("240x275")
+        root.geometry("255x300")
 
-        title = ttk.Label(root, text=f"{self.agent.name} ({team}) by VirxEC")
+        title = ttk.Label(root, text=f"{self.agent.name} ({team}) hosted by VirxERLU")
         title.pack()
+
+        author = ttk.Label(root, text=f"VirxEB by VirxEC (VirxEC/VirxEB)")
+        author.pack()
 
         # Goalie
 
