@@ -8,8 +8,8 @@ from typing import SupportsFloat
 from rlbot.agents.base_agent import BaseAgent, SimpleControllerState
 
 from gui import Gui
-from prediction import Prediction
 from match_comms import MatchComms
+from prediction import Prediction
 
 
 class Playstyle(Enum):
@@ -21,7 +21,7 @@ class Playstyle(Enum):
 class VirxERLU(BaseAgent):
     # Massive thanks to ddthj/GoslingAgent (GitHub repo) for the basis of VirxERLU
     def initialize_agent(self):
-        self.tournament = True
+        self.tournament = False
         self.print("Initalizing threads...")
 
         if not self.tournament:
@@ -62,9 +62,7 @@ class VirxERLU(BaseAgent):
         self.print("Starting the predictive service...")
         self.prediction.start()
 
-        self.match_comms = MatchComms(self)
-        self.print("Starting the match communication handler...")
-        self.match_comms.start()
+        self.match_comms = None
 
         self.print("Building game information")
 
@@ -128,8 +126,20 @@ class VirxERLU(BaseAgent):
 
         self.odd_tick = 0  # Use this for thing that can be run at 30 or 60 tps instead of 120
 
+    def retire(self):
+        # Stop the currently running threads
+        if not self.tournament:
+            self.gui.stop()
+
+        if len(self.friends) > 0:
+            self.match_comms.stop()
+
+        self.prediction.stop()
+
     @staticmethod
     def is_hot_reload_enabled():
+        # The tkinter GUI isn't compatible with hot reloading
+        # Use the Continue and Spawn option in the GUI instead
         return False
 
     def get_ready(self, packet):
@@ -176,6 +186,11 @@ class VirxERLU(BaseAgent):
         # Useful to keep separate from get_ready because humans can join/leave a match
         self.friends = tuple(car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team is self.team and i != self.index)
         self.foes = tuple(car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team != self.team)
+
+        if len(self.friends) > 0 and self.match_comms is None:
+            self.match_comms = MatchComms(self)
+            self.print("Starting the match communication handler...")
+            self.match_comms.start()
 
     def push(self, routine):
         self.stack.append(routine)
@@ -285,7 +300,7 @@ class VirxERLU(BaseAgent):
                         if self.show_coords:
                             self.debug[1].insert(0, str(self.me.location.int()))
 
-                        if not self.clear() and self.stack[0].__class__.__name__ in {'Aerial', 'jump_shot', 'block_ground_shot'}:
+                        if not self.is_clear() and self.stack[0].__class__.__name__ in {'Aerial', 'jump_shot', 'block_ground_shot'}:
                             self.dbg_2d(round(self.stack[0].intercept_time - self.time, 4))
 
                         self.renderer.draw_string_2d(20, 300, 2, 2, "\n".join(self.debug[1]), self.renderer.team_color(alt_color=True))

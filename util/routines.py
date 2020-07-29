@@ -30,7 +30,7 @@ class atba:
         defaultThrottle(agent, 1400)
 
         agent.controller.boost = False
-        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 else agent.controller.handbrake
+        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x > 2000 and abs(angles[1]) > 1.5) else agent.controller.handbrake
 
         velocity = 1+agent.me.velocity.magnitude()
         if distance_remaining < self.exit_distance:
@@ -298,7 +298,7 @@ class goto:
 
         if agent.me.boost < 30 or (agent.playstyle is agent.playstyles.Defensive and agent.predictions['self_from_goal'] < 4000):
             agent.controller.boost = False
-        agent.controller.handbrake = True if abs(angles[1]) >= 2.25 else agent.controller.handbrake
+        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x > 2000 and abs(angles[1]) > 1.5) else agent.controller.handbrake
 
         velocity = 1+agent.me.velocity.magnitude()
         if abs(angles[1]) < 0.05 and velocity > 600 and velocity < 2150 and distance_remaining / velocity > 2:
@@ -434,7 +434,7 @@ class goto_boost:
         defaultThrottle(agent, 2300)
 
         agent.controller.boost = self.boost.large if abs(angles[1]) < 0.3 else False
-        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 else agent.controller.handbrake
+        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x > 2000 and abs(angles[1]) > 1.5) else agent.controller.handbrake
 
         velocity = 1+agent.me.velocity.magnitude()
         if not self.boost.active or agent.me.boost >= 80.0 or distance_remaining < 350:
@@ -514,7 +514,7 @@ class jump_shot:
         agent.line(agent.me.location, agent.me.location + (self.shot_vector*200), agent.renderer.white())
 
         agent.controller.boost = False if abs(angles[1]) > 0.3 or agent.me.airborne else agent.controller.boost
-        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 and self.direction == 1 else agent.controller.handbrake
+        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x > 2000 and abs(angles[1]) > 1.5) and self.direction == 1 else agent.controller.handbrake
 
         if not self.jumping:
             if raw_time_remaining <= 0 or (speed_required - 2300) * time_remaining > 45 or not shot_valid(agent, self):
@@ -560,7 +560,7 @@ class generic_kickoff:
         self.flip = False
 
     def run(self, agent):
-        if flip:
+        if self.flip:
             agent.kickoff_done = True
             agent.pop()
             return
@@ -574,7 +574,7 @@ class generic_kickoff:
 
         distance = local_target.magnitude()
 
-        if distance < 650:
+        if distance < 550:
             self.flip = True
             agent.push(flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
 
@@ -644,7 +644,7 @@ class short_shot:
         angles = defaultPD(agent, agent.me.local(final_target-agent.me.location))
         defaultThrottle(agent, 2300 if distance > 1600 else 2300-cap(1600*abs(angles[1]), 0, 2050))
         agent.controller.boost = False if agent.me.airborne or abs(angles[1]) > 0.3 else agent.controller.boost
-        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 else agent.controller.handbrake
+        agent.controller.handbrake = True if abs(angles[1]) or (agent.me.local(agent.me.velocity).x > 2000 and abs(angles[1]) > 1.5) >= 2.3 else agent.controller.handbrake
 
         if abs(angles[1]) < 0.05 and (eta < 0.45 or distance < 150):
             agent.pop()
@@ -668,7 +668,7 @@ class block_ground_shot:
 
     def run(self, agent):
         agent.shooting = True
-        agent.shot_weight = 1
+        agent.shot_weight = agent.max_shot_weight - 1
         if self.ball_location is None or not shot_valid(agent, self, threshold=75):
             self.ball_location, self.intercept_time, self.direction = self.get_intercept(agent)
 
@@ -678,17 +678,22 @@ class block_ground_shot:
                 agent.pop()
                 return
 
+        agent.shot_time = self.intercept_time
         t = self.intercept_time - agent.time
 
         # if we ran out of time, just pop
         # this can be because we were successful or not - we can't tell
-        if t < -0.5:
+        if t < -0.3:
             agent.shooting = False
             agent.shot_weight = -1
             agent.pop()
             return
 
-        if not self.brake:
+        if self.brake:
+            if agent.ball.location.dist(agent.me.location) < 250 and agent.ball.location.y * side(agent.team) + 10 < agent.me.location.y and agent.ball.location.z < 190:
+                agent.pop()
+                agent.flip(agent.me.local(agent.ball.location))
+        else:
             # current velocity
             u = agent.me.local(agent.me.velocity).x
             a = brake_accel.x
@@ -707,7 +712,7 @@ class block_ground_shot:
             defaultThrottle(agent, required_speed, self.direction)
 
             agent.controller.boost = False if abs(angles[1]) > 0.3 else agent.controller.boost
-            agent.controller.handbrake = True if abs(angles[1]) >= 2.3 and self.direction == 1 else False
+            agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x > 2000 and abs(angles[1]) > 1.5) and self.direction == 1 else False
 
     def is_viable(self, agent):
         self.ball_location, self.intercept_time, self.direction = self.get_intercept(agent)

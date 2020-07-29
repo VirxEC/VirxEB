@@ -73,7 +73,7 @@ def find_jump_shot(agent, target, cap_=6):
                     slope = find_slope(best_shot_vector, car_to_ball)
                     if forward_flag and ball_location.z <= 275 and slope > 0:
                         return jump_shot(ball_location, intercept_time, best_shot_vector)
-                    elif backward_flag and ball_location.z <= 250 and slope > 1:
+                    elif backward_flag and ball_location.z <= 250 and slope > 1.5 and intercept_time - agent.time < cap_ / 2:
                         return jump_shot(ball_location, intercept_time, best_shot_vector, -1)
 
 

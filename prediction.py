@@ -11,34 +11,43 @@ class Prediction(Thread):
         super().__init__(daemon=True)
         self.agent = agent
         self.event = Event()
+        self.online = 1
+
+    def stop(self):
+        self.online = 0
+        self.event.set()
 
     def run(self):
-        while 1:
+        while self.online:
             try:
                 self.event.wait()
 
                 len_friends = len(self.agent.friends)
+                side = 1 if self.agent.team is 1 else -1
 
                 can_shoot = True
 
                 if len(self.agent.foes) > 0:
-                    foe_distances = tuple(self.agent.ball.location.flat_dist(foe.location) if not foe.demolished else math.inf for foe in self.agent.foes)
+                    foe_distances = tuple(self.agent.ball.location.flat_dist(foe.location) for foe in self.agent.foes if not foe.demolished)
+                    self_dist = self.agent.ball.location.flat_dist(self.agent.me.location)
+                    if len(foe_distances) > 0:
+                        shoot_threshold = 4000
 
-                    shoot_threshold = 4000
+                        if len_friends == 1:
+                            shoot_threshold = 3500
+                        elif len_friends == 2:
+                            shoot_threshold = 3000
+                        elif len_friends > 2:
+                            shoot_threshold = 2580
 
-                    if len_friends == 1:
-                        shoot_threshold = 3500
-                    elif len_friends == 2:
-                        shoot_threshold = 3000
-                    elif len_friends > 2:
-                        shoot_threshold = 2750
+                        if len_friends == 0:
+                            for i, foe_dist in enumerate(foe_distances):
+                                if foe_dist + 50 < self_dist and self.agent.ball_to_goal > shoot_threshold and self.agent.foes[i].location.y * side < self.agent.ball.location.y * side:
+                                    can_shoot = False
 
-                    if len_friends == 0:
-                        for i, foe_dist in enumerate(foe_distances):
-                            if foe_dist < 500 and self.agent.ball_to_goal > shoot_threshold and self.agent.foes[i].location.y - 200 < self.agent.ball.location.y and self.agent.ball.location.y < self.agent.foes[i].location.y + 200:
-                                can_shoot = False
-
-                    self.agent.predictions['closest_enemy'] = min(foe_distances)
+                        self.agent.predictions['closest_enemy'] = min(foe_distances)
+                    else:
+                        self.agent.predictions['closest_enemy'] = math.inf
 
                 self.agent.predictions['self_from_goal'] = self.agent.friend_goal.location.flat_dist(self.agent.me.location) if not self.agent.me.demolished else math.inf
                 self.agent.predictions['self_to_ball'] = self.agent.ball.location.flat_dist(self.agent.me.location) if not self.agent.me.demolished else math.inf
@@ -68,10 +77,10 @@ class Prediction(Thread):
                             self.agent.playstyle = self.agent.playstyles.Neutral
                     else:
                         self.agent.playstyle = self.agent.playstyles.Defensive
-                elif self.agent.playstyle != self.agent.playstyles.Neutral:
+                elif self.agent.playstyle is not self.agent.playstyles.Neutral:
                     self.agent.playstyle = self.agent.playstyles.Neutral
 
-                if can_shoot:
+                if not can_shoot:
                     self.can_shoot = self.agent.time - 2.95
 
                 is_own_goal = False

@@ -153,6 +153,8 @@ class Gui(Thread):
         debug_ball_path_precision.set(self.agent.debug_ball_path_precision)
         debug_ball_path_precision.pack()
 
+        self.stop = root.destroy
+
         try:
             root.mainloop()
         except Exception:
