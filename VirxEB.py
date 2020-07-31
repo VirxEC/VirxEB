@@ -21,7 +21,7 @@ class VirxEB(VirxERLU):
         }
 
         self.panic_switch = {
-            self.playstyles.Defensive: 2560,
+            self.playstyles.Defensive: 1280,
             self.playstyles.Offensive: 1280,
             self.playstyles.Neutral: 640
         }
@@ -95,23 +95,23 @@ class VirxEB(VirxERLU):
                     return
 
                 # This is a list of all tm8s that are onside
-                team_to_ball = [car.location.flat_dist(self.ball.location) for car in self.friends if car.location.y * side(self.team) >= ball_loc.y - 50 and abs(car.location.x) < abs(ball_loc.x)]
+                team_to_ball = [car.location.flat_dist(self.ball.location) for car in self.friends if car.location.y * side(self.team) >= ball_loc.y + 50 and abs(car.location.x) < abs(ball_loc.x)]
                 self_to_ball = self.me.location.flat_dist(self.ball.location)
                 team_to_ball.append(self_to_ball)
                 team_to_ball.sort()
 
                 if not self.shooting:
-                    # What is 174.9?
-                    # 174.9 is the radius of the ball rounded up (93) plus the half the length of the longest car rounded up (breakout; 66) with an extra 10%
-                    # Basicly it's the 'is an enemy on top of the damn ball' detector
-                    if self_loc.y > ball_loc.y and self.predictions['closest_enemy'] < 174.9:
+                    # What is 175?
+                    # 175 is the radius of the ball rounded up (93) plus the half the length of the longest car rounded up (breakout; 66) with an extra 10% then rounded up
+                    # Basicly it's the 'is an enemy dribbling the ball' detector
+                    if self_loc.y > ball_loc.y and self.predictions['closest_enemy'] <= 175:
                         bgs = block_ground_shot()
                         if bgs.is_viable(self):
                             self.clear()
                             self.push(bgs)
                             return
 
-                    if (ball_loc.x > 100 and ball_loc.x < 900 and self_loc.x > ball_loc.x and self.smart_shot(self.panic_shots[0])) or (ball_loc.x < -100 and ball_loc.x > -900 and self_loc.x < ball_loc.x and self.smart_shot(self.panic_shots[1])):
+                    if self_loc.y > ball_loc.y - 50 and ((ball_loc.x > 0 and ball_loc.x < 900 and self_loc.x > ball_loc.x and self.smart_shot(self.panic_shots[0])) or (ball_loc.x < -100 and ball_loc.x > -900 and self_loc.x < ball_loc.x and self.smart_shot(self.panic_shots[1]))):
                         return
 
                     if self.predictions['own_goal'] or (len(team_to_ball) > 1 and team_to_ball[math.ceil(len(team_to_ball) / 2)] + 10 > self_to_ball) or (len(team_to_ball) == 1 and self_to_ball < 2580):
@@ -120,8 +120,10 @@ class VirxEB(VirxERLU):
                                 if self.smart_shot(shot):
                                     return
 
-                        if self_loc.y > ball_loc.y and team_to_ball[0] is self_to_ball:
-                            self.smart_shot(weight=self.max_shot_weight - 1)
+                        if self_loc.y > ball_loc.y and team_to_ball[0] is self_to_ball and self.smart_shot(weight=self.max_shot_weight - 1):
+                            return
+
+                    self.backcheck()
 
                 elif self.shooting and self.odd_tick == 0:
                     if ball_loc.y < 1280:
@@ -142,10 +144,11 @@ class VirxEB(VirxERLU):
                     else:
                         shot = None
                         if self.shot_weight is self.max_shot_weight:
-                            if ball_loc.x > 100 and ball_loc.x < 900 and self_loc.x > ball_loc.x:
-                                shot = self.get_shot(self.panic_shots[0], weight=self.max_shot_weight)
-                            elif ball_loc.x < -100 and ball_loc.x > -900 and self_loc.x < ball_loc.x:
-                                shot = self.get_shot(self.panic_shots[1], weight=self.max_shot_weight)
+                            if self_loc.y > ball_loc.y - 50:
+                                if ball_loc.x > 100 and ball_loc.x < 900 and self_loc.x > ball_loc.x:
+                                    shot = self.get_shot(self.panic_shots[0], weight=self.max_shot_weight)
+                                elif ball_loc.x < -100 and ball_loc.x > -900 and self_loc.x < ball_loc.x:
+                                    shot = self.get_shot(self.panic_shots[1], weight=self.max_shot_weight)
                         elif self_loc.y > ball_loc.y and team_to_ball[0] is self_to_ball:
                             shot = self.get_shot(weight=self.max_shot_weight - 1)
 
@@ -153,6 +156,7 @@ class VirxEB(VirxERLU):
                             if self.shot_weight is shot['weight'] and shot['intercept_time'] < self.shot_time - 0.05:
                                 self.shoot_from(shot, clear_on_valid=True)
             else:
+                self.panic = False
                 if not self.recover_from_air():
                     self.playstyles_switch[self.playstyle]()
         ""
@@ -340,7 +344,7 @@ class VirxEB(VirxERLU):
         return
 
     def shoot_from(self, shot, defend=True, clear_on_valid=False):
-        if self.can_shoot is None:
+        if self.can_shoot is None or self.predictions['own_goal']:
             if (defend and not self.shooting and not self.is_clear()) or clear_on_valid:
                 self.clear()
 

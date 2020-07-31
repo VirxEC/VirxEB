@@ -87,13 +87,13 @@ class Prediction(Thread):
                 is_goal = False
 
                 if self.agent.predictions['ball_struct'] is not None:
-                    for i in range(0, self.agent.predictions['ball_struct'].num_slices, 5):
+                    for i in range(0, self.agent.predictions['ball_struct'].num_slices, 3):
                         prediction_slice = self.agent.predictions['ball_struct'].slices[i]
                         location = prediction_slice.physics.location
 
-                        if (self.agent.team == 0 and location.y <= -5212) or (self.agent.team == 1 and location.y >= 5212):
+                        if location.y * side >= 5212:
                             is_own_goal = True
-                        elif (self.agent.team == 0 and location.y >= 5212) or (self.agent.team == 1 and location.y <= -5212):
+                        elif location.y * side <= -5212:
                             is_goal = True
 
                 if is_own_goal:
