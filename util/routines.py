@@ -192,7 +192,7 @@ class Aerial:
         boost_estimate = (tau2 - tau1) * 30
         enough_boost = boost_estimate < 0.95 * agent.me.boost
         enough_time = abs(ratio) < 0.9
-        enough_speed = velocity_estimate.normalize(True)[1] < 0.9 * max_speed
+        enough_speed = velocity_estimate.magnitude() < 0.9 * max_speed
 
         return enough_speed and enough_boost and enough_time
 
@@ -235,15 +235,15 @@ class flip:
 
 
 class brake:
-    def run(self, agent):
+    def run(self, agent, manual=False):
         speed = agent.me.local(agent.me.velocity).x
         if speed > 0:
             agent.controller.throttle = -1
-            if speed < 25:
+            if speed < 25 and not manual:
                 agent.pop()
         elif speed < 0:
             agent.controller.throttle = 1
-            if speed > -25:
+            if speed > -25 and not manual:
                 agent.pop()
         else:
             agent.pop()
@@ -350,27 +350,12 @@ class retreat:
         self.facing = False
 
     def run(self, agent):
-        team_to_ball = [car.location.flat_dist(agent.ball.location) for car in agent.friends if car.location.y * side(agent.team) >= agent.ball.location.y * side(agent.team) - 50 and abs(car.location.x) < abs(agent.ball.location.x)]
-        self_to_ball = agent.me.location.flat_dist(agent.ball.location)
-        team_to_ball.append(self_to_ball)
-        team_to_ball.sort()
+        if agent.ball.location.y * side(agent.team) < 2560 and agent.playstyle is not agent.playstyles.Defensive:
+            agent.pop()
+            agent.push(dynamic_backcheck())
+            return
 
-        if len(agent.friends) <= 1 or (agent.ball.location.x <= 900 and agent.ball.location.x >= -900) or len(team_to_ball) <= 1:
-            target = agent.friend_goal.location
-        elif team_to_ball[-1] == self_to_ball:
-            target = agent.friend_goal.right_post if abs(agent.ball.location.x) > 900 else agent.friend_goal.left_post
-        else:
-            target = agent.friend_goal.left_post if abs(agent.ball.location.x) > 900 else agent.friend_goal.right_post
-
-        target = target.copy()
-
-        if agent.ball.location.y * side(agent.team) > 4620 and target == agent.friend_goal.location:
-            target.y = (agent.ball.location.y * side(agent.team) + 250) * side(agent.team)
-        else:
-            target = target + Vector(y=-245 * side(agent.team))
-
-        target = target.flatten()
-
+        target = self.get_target(agent)
         agent.line(target, target + Vector(z=100))
 
         if target.flat_dist(agent.me.location) < 100:
@@ -392,6 +377,28 @@ class retreat:
         else:
             self.goto.target = target
             self.goto.run(agent, manual=True)
+
+    def get_target(self, agent):
+        team_to_ball = [car.location.flat_dist(agent.ball.location) for car in agent.friends if car.location.y * side(agent.team) >= agent.ball.location.y * side(agent.team) - 50 and abs(car.location.x) < abs(agent.ball.location.x)]
+        self_to_ball = agent.me.location.flat_dist(agent.ball.location)
+        team_to_ball.append(self_to_ball)
+        team_to_ball.sort()
+
+        if len(agent.friends) <= 1 or (agent.ball.location.x <= 900 and agent.ball.location.x >= -900) or len(team_to_ball) <= 1:
+            target = agent.friend_goal.location
+        elif team_to_ball[-1] == self_to_ball:
+            target = agent.friend_goal.right_post if abs(agent.ball.location.x) > 900 else agent.friend_goal.left_post
+        else:
+            target = agent.friend_goal.left_post if abs(agent.ball.location.x) > 900 else agent.friend_goal.right_post
+
+        target = target.copy()
+
+        if agent.ball.location.y * side(agent.team) > 4620 and target == agent.friend_goal.location:
+            target.y = (agent.ball.location.y * side(agent.team) + 250) * side(agent.team)
+        else:
+            target += Vector(y=-245 * side(agent.team))
+
+        return target.flatten()
 
 
 class goto_boost:
@@ -496,8 +503,8 @@ class jump_shot:
         final_target = self.dodge_point + ((car_to_dodge_perp.normalize() * adjustment) if not self.jumping else 0) + Vector(z=50)
         # Ensuring our target isn't too close to the sides of the field, where our car would get messed up by the radius of the curves
 
-        # Some adjustment to the final target to ensure it's inside the field and we don't try to dirve through any goalposts to reach it
-        if abs(agent.me.location.y) > 5150:
+        # Some adjustment to the final target to ensure it's inside the field and we don't try to drive through any goalposts to reach it
+        if abs(agent.me.location.y) > 5130:
             final_target.x = cap(final_target.x, -750, 750)
 
         local_final_target = agent.me.local(final_target - agent.me.location)
@@ -616,6 +623,7 @@ class short_shot:
 
     def run(self, agent):
         agent.shooting = True
+        agent.shot_weight = -1
 
         if self.start_time is None:
             self.start_time = agent.time
@@ -635,8 +643,8 @@ class short_shot:
         target_vector = -ball_to_target.clamp(left_vector, right_vector)
         final_target = agent.ball.location + (target_vector*(distance/2))
 
-        # Some adjustment to the final target to ensure we don't try to dirve through any goalposts to reach it
-        if abs(agent.me.location.y) > 5150:
+        # Some adjustment to the final target to ensure we don't try to drive through any goalposts to reach it
+        if abs(agent.me.location.y) > 5130:
             final_target.x = cap(final_target.x, -750, 750)
 
         agent.line(final_target-Vector(z=100), final_target + Vector(z=100), [255, 255, 255])
@@ -652,7 +660,7 @@ class short_shot:
             agent.shot_weight = -1
             agent.shot_time = -1
             agent.push(flip(agent.me.local(car_to_ball)))
-        elif agent.time - self.start_time > 3:
+        elif agent.time - self.start_time > 0.24:  # This will run for 3 ticks, then pop
             agent.pop()
             agent.shooting = False
             agent.shot_weight = -1
@@ -664,35 +672,33 @@ class block_ground_shot:
         self.ball_location = None
         self.intercept_time = None
         self.direction = None
-        self.brake = False
+        self.brake = None
 
     def run(self, agent):
         agent.shooting = True
         agent.shot_weight = agent.max_shot_weight - 1
-        if self.ball_location is None or not shot_valid(agent, self, threshold=75):
+
+        if self.ball_location is None:
             self.ball_location, self.intercept_time, self.direction = self.get_intercept(agent)
 
-            if self.ball_location is None:
-                agent.shooting = False
-                agent.shot_weight = -1
-                agent.pop()
-                return
-
-        agent.shot_time = self.intercept_time
         t = self.intercept_time - agent.time
 
-        # if we ran out of time, just pop
-        # this can be because we were successful or not - we can't tell
-        if t < -0.3:
+        if self.ball_location is None or not shot_valid(agent, self, threshold=75) or t < -0.1:
             agent.shooting = False
             agent.shot_weight = -1
+            agent.shot_time = -1
             agent.pop()
             return
 
+        agent.shot_time = self.intercept_time
+
         if self.brake:
-            if agent.ball.location.dist(agent.me.location) < 250 and agent.ball.location.y * side(agent.team) + 10 < agent.me.location.y and agent.ball.location.z < 190:
+            if agent.ball.location.dist(agent.me.location) < 500 and agent.ball.location.y * side(agent.team) + 10 < agent.me.location.y and agent.ball.location.z < 190:
+                agent.push(flip(agent.me.local(agent.ball.location)))
                 agent.pop()
-                agent.flip(agent.me.local(agent.ball.location))
+                return
+
+            self.brake.run(agent)
         else:
             # current velocity
             u = agent.me.local(agent.me.velocity).x
@@ -701,8 +707,8 @@ class block_ground_shot:
             x = (u ** 2 * -1) / (2 * a)
 
             if self.ball_location.dist(agent.me.location) <= x:
-                self.brake = True
-                agent.push(brake())
+                self.brake = brake()
+                self.brake.run(agent)
                 return
 
             agent.line(self.ball_location.flatten(), self.ball_location.flatten() + Vector(z=250), color=[255, 0, 255])
@@ -726,7 +732,7 @@ class block_ground_shot:
         struct = agent.predictions['ball_struct']
         intercepts = []
 
-        i = 30  # Begin by looking 0.3 seconds into the future
+        i = 18  # Begin by looking 0.3 seconds into the future
         while i < struct.num_slices:
             intercept_time = struct.slices[i].game_seconds
             time_remaining = intercept_time - agent.time
@@ -736,7 +742,7 @@ class block_ground_shot:
             if abs(ball_location.y) > 5212:
                 break
 
-            last_ball_location = Vector(struct.slices[i-2].physics.location.x, struct.slices[i-2].physics.location.y, struct.slices[i-2].physics.location.z)
+            last_ball_location = Vector(struct.slices[i-2].physics.location.x, struct.slices[i].physics.location.y, struct.slices[i].physics.location.z)
             ball_velocity = Vector(struct.slices[i].physics.velocity.x, struct.slices[i].physics.velocity.y, struct.slices[i].physics.velocity.z).magnitude()
 
             i += 15 - cap(int(ball_velocity//150), 0, 13)

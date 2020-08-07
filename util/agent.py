@@ -22,7 +22,6 @@ class VirxERLU(BaseAgent):
     # Massive thanks to ddthj/GoslingAgent (GitHub repo) for the basis of VirxERLU
     def initialize_agent(self):
         self.tournament = False
-        self.print("Initalizing threads...")
 
         if not self.tournament:
             self.gui = Gui(self)
@@ -102,7 +101,6 @@ class VirxERLU(BaseAgent):
 
         self.stack = []
         self.time = 0
-        self.prev_time = 0
 
         self.ready = False
 
@@ -122,7 +120,6 @@ class VirxERLU(BaseAgent):
         self.shooting = False
         self.shot_weight = -1
         self.shot_time = -1
-        self.panic = False
 
         self.odd_tick = 0  # Use this for thing that can be run at 30 or 60 tps instead of 120
 
@@ -152,25 +149,20 @@ class VirxERLU(BaseAgent):
         team = -foe_team
 
         self.defensive_shots = (
-            (self.foe_goal.left_post, self.foe_goal.right_post),  # Weight -> 4
-            (Vector(4000, foe_team * 3250, 100), Vector(2750, foe_team * 3250, 100)),  # Weight -> 3
-            (Vector(-4000, foe_team * 3250, 100), Vector(-2750, foe_team * 3250, 100)),  # Weight -> 3
-            (Vector(-3600, z=100), Vector(-1000, z=500)),  # Weight -> 2
-            (Vector(3600, z=100), Vector(1000, z=500))  # Weight -> 2
+            (self.foe_goal.left_post, self.foe_goal.right_post),
+            (Vector(4000, foe_team * 3250, 100), Vector(2750, foe_team * 3250, 100)),
+            (Vector(-4000, foe_team * 3250, 100), Vector(-2750, foe_team * 3250, 100))
         )
 
         self.panic_shots = (
-            (Vector(3100 * team, team * 3620, 100), Vector(3100 * team, team * 5120, 100)),  # Weight -> 1
-            (Vector(-3100 * team, team * 3620, 100), Vector(-3100 * team, team * 5120, 100))  # Weight -> 1
+            (Vector(3100 * team, team * 3620, 100), Vector(3100 * team, team * 5120, 100)),
+            (Vector(-3100 * team, team * 3620, 100), Vector(-3100 * team, team * 5120, 100))
         )
 
-        # () => Weight -> 0
-        # Short short => Weight -> -1
-
         self.offensive_shots = (
-            (self.foe_goal.left_post, self.foe_goal.right_post),  # Weight -> 4
-            (Vector(foe_team * 893, foe_team * 5120, 100), Vector(foe_team * 893, foe_team * 4720, 320)),  # Weight -> 3
-            (Vector(-foe_team * 893, foe_team * 5120, 100), Vector(-foe_team * 893, foe_team * 4720, 320))  # Weight -> 3
+            (self.foe_goal.left_post, self.foe_goal.right_post),
+            (Vector(foe_team * 893, foe_team * 5120, 100), Vector(foe_team * 893, foe_team * 4720, 320)),
+            (Vector(-foe_team * 893, foe_team * 5120, 100), Vector(-foe_team * 893, foe_team * 4720, 320))
         )
 
         self.best_shot = (Vector(foe_team * 650, foe_team * 5125, 320), Vector(-foe_team * 650, foe_team * 5125, 320))
@@ -208,7 +200,7 @@ class VirxERLU(BaseAgent):
             if isinstance(end, Vector):
                 end = end.copy().tuple()
 
-            self.renderer.draw_line_3d(start, end, color if type(color) != list else self.renderer.create_color(255, *color))
+            self.renderer.draw_line_3d(start, end, color if type(color) not in {list, tuple} else self.renderer.create_color(255, *color))
 
     def print(self, item):
         if not self.tournament:
@@ -226,7 +218,6 @@ class VirxERLU(BaseAgent):
         self.shot_weight = -1
         self.shot_time = -1
         self.stack = []
-        return 'asdf'  # This is here in case I call this instead of is_clear() - It should throw an error if I do
 
     def is_clear(self):
         return len(self.stack) < 1
@@ -253,9 +244,8 @@ class VirxERLU(BaseAgent):
         self.kickoff_flag = self.game.round_active and self.game.kickoff
         self.ball_to_goal = self.friend_goal.location.flat_dist(self.ball.location)
 
-        if self.odd_tick % 2 == 0:  # This is ran @ 60 tps
-            self.predictions['ball_struct'] = self.get_ball_prediction_struct()
-            self.prediction.event.set()
+        self.predictions['ball_struct'] = self.get_ball_prediction_struct()
+        self.prediction.event.set()
 
         self.odd_tick += 1
 
@@ -264,11 +254,14 @@ class VirxERLU(BaseAgent):
 
     def get_output(self, packet):
         try:
-            # Reset controller
-            self.controller.__init__()
+            if not self.disable_driving:
+                # Reset controller
+                self.controller.__init__()
+
             # Get ready, then preprocess
             if not self.ready:
                 self.get_ready(packet)
+
             self.preprocess(packet)
 
             if self.me.demolished:
@@ -277,15 +270,6 @@ class VirxERLU(BaseAgent):
             elif self.game.round_active and self.predictions['done']:
                 self.dbg_3d(self.playstyle.name)
                 self.run()  # Run strategy code; This is a very expensive function to run
-
-                # run the routine on the end of the stack
-                if not self.is_clear():
-                    self.stack[-1].run(self)
-
-                if self.is_clear() or self.stack[0].__class__.__name__ not in {'Aerial', 'jump_shot', 'block_ground_shot'}:
-                    self.shooting = False
-                    self.shot_weight = -1
-                    self.shot_time = -1
 
                 if self.debugging:
                     if self.debug_3d_bool:
@@ -309,6 +293,9 @@ class VirxERLU(BaseAgent):
                     if self.debug_ball_path:
                         if self.predictions['ball_struct'] is not None:
                             for i in range(0, self.predictions['ball_struct'].num_slices - (self.predictions['ball_struct'].num_slices % self.debug_ball_path_precision) - self.debug_ball_path_precision, self.debug_ball_path_precision):
+                                if self.predictions['ball_struct'].slices[i + self.debug_ball_path_precision].physics.location.y > 5212:
+                                    break
+
                                 self.line(
                                     self.predictions['ball_struct'].slices[i].physics.location,
                                     self.predictions['ball_struct'].slices[i + self.debug_ball_path_precision].physics.location
@@ -316,8 +303,16 @@ class VirxERLU(BaseAgent):
                 else:
                     self.debug = [[], []]
 
-            self.prev_time = self.time
-            return SimpleControllerState() if self.disable_driving else self.controller
+                # run the routine on the end of the stack
+                if not self.is_clear():
+                    self.stack[-1].run(self)
+
+                if self.is_clear() or self.stack[0].__class__.__name__ not in {'Aerial', 'jump_shot', 'block_ground_shot'}:
+                    self.shooting = False
+                    self.shot_weight = -1
+                    self.shot_time = -1
+
+            return self.controller.__init__() if self.disable_driving else self.controller
         except Exception:
             print(self.name)
             print_exc()

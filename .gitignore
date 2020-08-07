@@ -116,3 +116,4 @@ ENV/
 # Other RL bots
 RLBotPackDeletable/
 VirxEB.zip
+test.py

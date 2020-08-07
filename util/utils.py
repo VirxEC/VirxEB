@@ -45,7 +45,7 @@ def defaultThrottle(agent, target_speed, direction=1.0):
     car_speed = agent.me.local(agent.me.velocity).x
     t = (target_speed * direction) - car_speed
     agent.controller.throttle = cap((t**2) * sign(t)/1000, -1.0, 1.0)
-    agent.controller.boost = t > 150 and 1300 < car_speed and car_speed < 2300 and agent.controller.throttle == 1
+    agent.controller.boost = t > 150 and (1300 < car_speed or target_speed - car_speed > 400) and agent.controller.throttle == 1
     return car_speed
 
 
@@ -87,7 +87,7 @@ def post_correction(ball_location, left_target, right_target):
     right = right_target + ((right_target - ball_location).normalize().cross(Vector(z=1))*ball_radius)
     left = left_target if (left-left_target).dot(goal_line_perp) > 0 else left
     right = right_target if (right-right_target).dot(goal_line_perp) > 0 else right
-    swapped = True if (left - ball_location).normalize().cross(Vector(z=1)).dot((right - ball_location).normalize()) > -0.1 else False
+    swapped = (left - ball_location).normalize().cross(Vector(z=1)).dot((right - ball_location).normalize()) > -0.1
     return left, right, swapped
 
 

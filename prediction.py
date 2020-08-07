@@ -83,25 +83,27 @@ class Prediction(Thread):
                 if not can_shoot:
                     self.can_shoot = self.agent.time - 2.95
 
-                is_own_goal = False
-                is_goal = False
+                if self.agent.odd_tick == 0:
+                    is_own_goal = False
+                    is_goal = False
 
-                if self.agent.predictions['ball_struct'] is not None:
-                    for i in range(0, self.agent.predictions['ball_struct'].num_slices, 3):
-                        prediction_slice = self.agent.predictions['ball_struct'].slices[i]
-                        location = prediction_slice.physics.location
+                    if self.agent.predictions['ball_struct'] is not None:
+                        for ball_slice in self.agent.predictions['ball_struct'].slices[30::6]:
+                            location = ball_slice.physics.location.y * side
 
-                        if location.y * side >= 5212:
-                            is_own_goal = True
-                        elif location.y * side <= -5212:
-                            is_goal = True
+                            if location >= 5212:
+                                is_own_goal = True
+                                break
 
-                if is_own_goal:
-                    if not self.agent.predictions['own_goal']:
+                            if location <= -5212:
+                                is_goal = True
+                                break
+
+                    if is_own_goal and not self.agent.predictions['own_goal']:
                         self.agent.send_quick_chat(QuickChats.CHAT_EVERYONE, QuickChats.Compliments_NiceShot)
 
-                self.agent.predictions["own_goal"] = is_own_goal
-                self.agent.predictions["goal"] = is_goal
+                    self.agent.predictions["own_goal"] = is_own_goal
+                    self.agent.predictions["goal"] = is_goal
 
                 self.agent.predictions['done'] = True
 
