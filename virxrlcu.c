@@ -254,7 +254,7 @@ struct jump_shot parse_slice_for_jump_shot(double time_remaining, Vector ball_lo
 
     r.best_shot_vector = direction;
 
-    if ((forward_flag || backward_flag) && in_field(sub(ball_location, multiply(r.best_shot_vector, double_to_vector(200))), 1) && fast_shot(car_location, ball_location, time_remaining, cap_, 600)) {
+    if ((forward_flag || backward_flag) && in_field(sub(ball_location, multiply(r.best_shot_vector, double_to_vector(200))), 1)) {
         double slope = find_slope(r.best_shot_vector, car_to_ball);
         if (forward_flag && ball_location.z <= 275 && slope > 0) {
             r.found = 1;
@@ -323,8 +323,9 @@ struct aerial_shot parse_slice_for_aerial_shot_with_target(double time_remaining
 
         if (in_field(sub(ball_location, multiply(best_shot_vector, double_to_vector(200))), 1) && fast_shot(me.location, ball_location, time_remaining, cap_, 250)) {
             r.ball_intercept = sub(ball_location, multiply(best_shot_vector, double_to_vector(92)));
+            double slope = find_slope(r.ball_intercept, car_to_ball);
 
-            if (is_viable(time_remaining, boost_accel, gravity, me, r.ball_intercept))
+            if (slope > -1 && is_viable(time_remaining, boost_accel, gravity, me, r.ball_intercept))
                 r.found = 1;
         }
     }
@@ -339,7 +340,7 @@ struct aerial_shot parse_slice_for_aerial_shot(double time_remaining, double boo
     Vector car_to_ball = sub(ball_location, me.location);
     Vector best_shot_vector = normalize(car_to_ball).vector;
 
-    if (in_field(sub(ball_location, multiply(best_shot_vector, double_to_vector(200))), 1) && fast_shot(me.location, ball_location, time_remaining, cap_, 600)) {
+    if (in_field(sub(ball_location, multiply(best_shot_vector, double_to_vector(200))), 1)) {
         r.ball_intercept = sub(ball_location, multiply(best_shot_vector, double_to_vector(92)));
 
         if (is_viable(time_remaining, boost_accel, gravity, me, r.ball_intercept))

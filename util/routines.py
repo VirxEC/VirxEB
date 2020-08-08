@@ -30,7 +30,7 @@ class atba:
         defaultThrottle(agent, 1400)
 
         agent.controller.boost = False
-        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x >= 1400 and abs(angles[1]) > 1.5) else agent.controller.handbrake
+        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x >= 900 and abs(angles[1]) > 1.5) else agent.controller.handbrake
 
         velocity = 1+agent.me.velocity.magnitude()
         if distance_remaining < self.exit_distance:
@@ -210,8 +210,8 @@ class flip:
         # keeps track of the frames the jump button has been released
         self.counter = 0
 
-    def run(self, agent):
-        if agent.gravity.z == 3250:
+    def run(self, agent, manual=False):
+        if agent.gravity.z >= 3250:
             agent.pop()
 
         if self.time == -1:
@@ -229,6 +229,8 @@ class flip:
             agent.controller.jump = True
             agent.controller.pitch = self.pitch
             agent.controller.yaw = self.yaw
+        elif manual:
+            return True
         else:
             agent.pop()
             agent.push(recovery())
@@ -298,7 +300,7 @@ class goto:
 
         if agent.me.boost < 30 or (agent.playstyle is agent.playstyles.Defensive and agent.predictions['self_from_goal'] < 4000):
             agent.controller.boost = False
-        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x >= 1400 and abs(angles[1]) > 1.5) else agent.controller.handbrake
+        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x >= 900 and abs(angles[1]) > 1.5) else agent.controller.handbrake
 
         velocity = 1+agent.me.velocity.magnitude()
         if abs(angles[1]) < 0.05 and velocity > 600 and velocity < 2150 and distance_remaining / velocity > 2:
@@ -441,7 +443,7 @@ class goto_boost:
         defaultThrottle(agent, 2300)
 
         agent.controller.boost = self.boost.large if abs(angles[1]) < 0.3 else False
-        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x >= 1400 and abs(angles[1]) > 1.5) else agent.controller.handbrake
+        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x >= 900 and abs(angles[1]) > 1.5) else agent.controller.handbrake
 
         velocity = 1+agent.me.velocity.magnitude()
         if not self.boost.active or agent.me.boost >= 80.0 or distance_remaining < 350:
@@ -521,7 +523,7 @@ class jump_shot:
         agent.line(agent.me.location, agent.me.location + (self.shot_vector*200), agent.renderer.white())
 
         agent.controller.boost = False if abs(angles[1]) > 0.3 or agent.me.airborne else agent.controller.boost
-        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x >= 1400 and abs(angles[1]) > 1.5) and self.direction == 1 else agent.controller.handbrake
+        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x >= 900 and abs(angles[1]) > 1.5) and self.direction == 1 else agent.controller.handbrake
 
         if not self.jumping:
             if raw_time_remaining <= 0 or (speed_required - 2300) * time_remaining > 45 or not shot_valid(agent, self):
@@ -584,6 +586,47 @@ class generic_kickoff:
         if distance < 550:
             self.flip = True
             agent.push(flip(agent.me.local(agent.foe_goal.location - agent.me.location)))
+
+
+class corner_kickoff:
+    def __init__(self, direction):
+        self.direction = direction
+        self.start_time = None
+        self.drive_right = None
+        self.last_boost = 34
+        self.flip = None
+        self.flip_done = None
+        self.recovered = False
+
+    def run(self, agent):
+        if self.start_time is None:
+            self.start_time = agent.time
+
+        agent.controller.throttle = 1
+
+        if agent.me.boost > 12:
+            agent.controller.boost = True
+
+        if agent.me.boost > self.last_boost:
+            if self.drive_right is None:
+                self.drive_right = agent.time
+
+        if self.drive_right is not None:
+            if agent.time - self.drive_right < 0.1:
+                agent.controller.steer = self.direction
+            elif self.flip_done is None:
+                if self.flip is None:
+                    self.flip = flip(agent.me.local(agent.ball.location + Vector(y=1400 * side(agent.team)) - agent.me.location))
+                self.flip_done = self.flip.run(agent)
+            else:
+                self.recovered = True
+                agent.push(ball_recovery())
+
+        self.last_boost = agent.me.boost
+
+        if self.recovered or agent.time - self.start_time > 3:  # fine tune this value
+            agent.kickoff_done = True
+            agent.pop()
 
 
 class recovery:
@@ -652,7 +695,7 @@ class short_shot:
         angles = defaultPD(agent, agent.me.local(final_target-agent.me.location))
         defaultThrottle(agent, 2300 if distance > 1600 else 2300-cap(1600*abs(angles[1]), 0, 2050))
         agent.controller.boost = False if agent.me.airborne or abs(angles[1]) > 0.3 else agent.controller.boost
-        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x >= 1400 and abs(angles[1]) > 1.5) else agent.controller.handbrake
+        agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x >= 900 and abs(angles[1]) > 1.5) else agent.controller.handbrake
 
         if abs(angles[1]) < 0.05 and (eta < 0.45 or distance < 150):
             agent.pop()
@@ -718,7 +761,7 @@ class block_ground_shot:
             defaultThrottle(agent, required_speed, self.direction)
 
             agent.controller.boost = False if abs(angles[1]) > 0.3 else agent.controller.boost
-            agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x >= 1400 and abs(angles[1]) > 1.5) and self.direction == 1 else False
+            agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x >= 900 and abs(angles[1]) > 1.5) and self.direction == 1 else False
 
     def is_viable(self, agent):
         self.ball_location, self.intercept_time, self.direction = self.get_intercept(agent)

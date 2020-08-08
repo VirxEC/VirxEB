@@ -5,9 +5,8 @@ from traceback import print_exc
 from rlbot.utils.structures.quick_chats import QuickChats
 
 from util.agent import math, VirxERLU
-from util.routines import goto, goto_boost, ball_recovery, short_shot, generic_kickoff, dynamic_backcheck, retreat, block_ground_shot
-# from util.replays import back_left_kickoff, back_right_kickoff
-from util.replays import back_kickoff, right_kickoff, left_kickoff
+from util.routines import goto, goto_boost, ball_recovery, short_shot, generic_kickoff, dynamic_backcheck, retreat, block_ground_shot, corner_kickoff
+from util.replays import back_kickoff
 from util.tools import find_jump_shot, find_aerial, find_any_aerial, find_any_jump_shot
 from util.utils import side, almost_equals, send_comm, get_weight, peek_generator
 
@@ -28,7 +27,7 @@ class VirxEB(VirxERLU):
         }
 
         self.panic_switch = {
-            self.playstyles.Defensive: 1280,
+            self.playstyles.Defensive: 1920,
             self.playstyles.Offensive: 1280,
             self.playstyles.Neutral: 640
         }
@@ -139,7 +138,10 @@ class VirxEB(VirxERLU):
                             self.push(short_shot(self.foe_goal.location))
                             return
 
-                    self.backcheck()
+                        self.backcheck()
+                        return
+
+                    self.backcheck(simple=True)
 
                 elif self.shooting and self.odd_tick == 0:
                     if ball_loc.y < 1280:
@@ -235,7 +237,7 @@ class VirxEB(VirxERLU):
         if self.is_clear():
             if self.predictions['self_from_goal'] > 2560:
                 self.backcheck(simple=True)
-            if self.me.boost < 72:
+            if self.me.boost < 72 and self.ball.location.y * side(self.team) < -1280:
                 self.goto_nearest_boost(only_small=self.ball.location.y * side(self.team) > -2560)
             elif self.predictions['self_from_goal'] > 750:
                 self.backcheck(simple=True)
@@ -473,9 +475,9 @@ class VirxEB(VirxERLU):
         if kickoff_check(back):
             self.push(back_kickoff())
         elif kickoff_check(left):
-            self.push(left_kickoff())
+            self.push(corner_kickoff(-1))
         elif kickoff_check(right):
-            self.push(right_kickoff())
+            self.push(corner_kickoff(1))
         elif kickoff_check(back_left) or kickoff_check(back_right):
             self.push(generic_kickoff())
         else:

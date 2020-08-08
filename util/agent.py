@@ -312,7 +312,7 @@ class VirxERLU(BaseAgent):
                     self.shot_weight = -1
                     self.shot_time = -1
 
-            return self.controller.__init__() if self.disable_driving else self.controller
+            return SimpleControllerState() if self.disable_driving else self.controller
         except Exception:
             print(self.name)
             print_exc()

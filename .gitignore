@@ -117,3 +117,4 @@ ENV/
 RLBotPackDeletable/
 VirxEB.zip
 test.py
+setup.py

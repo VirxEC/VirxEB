@@ -1,4 +1,4 @@
-Shots now require 0.5 per 250 units on shots with a target, and 0.5 second per 600 units for shots without a target
+Shots now require 0.5 per 250 units on shots with a target, and removed the limit on shots without a target
 block_ground_shot will now flip towards the ball
 Smarter centers on offense
 A majority of the math required to find a shot is now done in C
@@ -9,3 +9,7 @@ VirxEB's general recovery now faces towards the ball
 New methods that execute only when VirxEB is in the air and not shooting
 Optimized finding a better shot when already shooting
 Optimized finding a shot with a cap in the seconds
+Added speed corner kickoffs
+Searches a lot more slices from the ball prediction
+Fixed the defender coming out of the net on an opponent's break away
+More pathfinding improvements
