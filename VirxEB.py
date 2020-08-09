@@ -4,7 +4,7 @@ from traceback import print_exc
 # from rlbot.utils.game_state_util import Vector3
 from rlbot.utils.structures.quick_chats import QuickChats
 
-from util.agent import math, VirxERLU
+from util.agent import math, VirxERLU  # , Vector
 from util.routines import goto, goto_boost, ball_recovery, short_shot, generic_kickoff, dynamic_backcheck, retreat, block_ground_shot, corner_kickoff
 from util.replays import back_kickoff
 from util.tools import find_jump_shot, find_aerial, find_any_aerial, find_any_jump_shot
@@ -58,13 +58,13 @@ class VirxEB(VirxERLU):
         """
         # Aerial testing
         """
-        if not self.shooting and self.ball.location.z < 98:
+        if not self.shooting and self.ball.location.z < 100:
             ball_state = BallState(Physics(location=Vector3(0, -3000 * side(self.team), self.ball.location.z), velocity=Vector3(0, 0, 2000), angular_velocity=Vector3(0, 0, 0)))
             game_state = GameState(ball=ball_state)
             self.set_game_state(game_state)
 
         if not self.shooting:
-            self.smart_shot(())
+            self.smart_shot()
 
         if self.is_clear():
             self.push(goto(Vector(), self.foe_goal.location, brake=True))
@@ -105,6 +105,9 @@ class VirxEB(VirxERLU):
                 team_to_ball.sort()
 
                 if not self.shooting or self.shot_weight == -1:
+                    if len(team_to_ball) == 1:
+                        self.can_shoot = None
+
                     # What is 175?
                     # 175 is the radius of the ball rounded up (93) plus the half the length of the longest car rounded up (breakout; 66) with an extra 10% then rounded up
                     # Basicly it's the 'is an enemy dribbling the ball' detector
@@ -138,10 +141,7 @@ class VirxEB(VirxERLU):
                             self.push(short_shot(self.foe_goal.location))
                             return
 
-                        self.backcheck()
-                        return
-
-                    self.backcheck(simple=True)
+                    self.backcheck()
 
                 elif self.shooting and self.odd_tick == 0:
                     if ball_loc.y < 1280:
@@ -220,6 +220,10 @@ class VirxEB(VirxERLU):
                             self.can_shoot += 2
                         else:
                             self.can_shoot += 1
+
+                        if self.shooting and self.shot_weight == -1:
+                            self.clear()
+                            self.backcheck()
         except Exception:
             print_exc()
 
@@ -431,7 +435,9 @@ class VirxEB(VirxERLU):
 
     def backcheck(self, simple=False, clear_on_valid=False):
         if self.is_clear() or clear_on_valid:
-            if self.playstyle is not self.playstyles.Defensive and not simple and self.ball.location.y * side(self.team) < 2560:
+            ball_velocity = self.ball.velocity.magnitude()
+
+            if self.playstyle is not self.playstyles.Defensive and not simple and self.ball.location.y * side(self.team) < 2560 and not self.predictions['own_goal'] and not (ball_velocity > 1300 and self.ball.velocity.y * side(self.team) > 0 and self.ball.location.y * side(self.team) > -2560):
                 if clear_on_valid:
                     self.clear()
 

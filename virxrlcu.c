@@ -3,12 +3,20 @@
 
 // Constants
 
-int max_speed = 2300;
-double jump_max_duration = 0.2;
-double jump_speed = 291 + (2/3);
-double jump_acc = 1458 + (1/3);
+const int max_speed = 2300;
+const double jump_max_duration = 0.2;
+const double jump_speed = 291 + (2/3);
+const double jump_acc = 1458 + (1/3);
 
 // Vector stuff
+
+double cap(double value, double min, double max) {
+    if (value < min)
+        return min;
+    if (value > max)
+        return max;
+    return value;
+};
 
 typedef struct vector {
     double x;
@@ -39,13 +47,6 @@ Vector multiply(Vector vec1, Vector vec2) {
     };
 };
 
-Vector equal_power(Vector vec1, int vec2) {
-    double r = pow(vec1.x, vec2);
-    return (Vector) {
-        .x=r, .y=r, .z=r
-    };
-};
-
 Vector divide(Vector vec1, Vector vec2) {
     return (Vector) {
         .x=vec1.x / vec2.x, .y=vec1.y / vec2.y, .z=vec1.z / vec2.z
@@ -62,15 +63,18 @@ double magnitude(Vector vec) {
 
 struct opti_norm normalize(Vector vec) {
     struct opti_norm r;
+    r.vector = (Vector){
+        .x=0, .y=0, .z=0
+    };
     r.magnitude = magnitude(vec);
 
-    r.vector = (r.magnitude == 0) ? (Vector) {
-        0, 0, 0
-    } : (Vector) {
+    if (r.magnitude != 0) {
+        r.vector = (Vector){
             .x=vec.x/r.magnitude, .y=vec.y/r.magnitude, .z=vec.z/r.magnitude
         };
+    }
 
-        return r;
+    return r;
 };
 
 Vector flatten(Vector vec) {
@@ -80,7 +84,7 @@ Vector flatten(Vector vec) {
 }
 
 double angle(Vector vec1, Vector vec2) {
-    return acos(max(min(dot(normalize(vec1).vector, normalize(vec2).vector), 1), -1));
+    return acos(cap(dot(normalize(vec1).vector, normalize(vec2).vector), -1, 1));
 };
 
 Vector cross(Vector vec1, Vector vec2) {
@@ -182,14 +186,6 @@ double find_slope(Vector shot_vector, Vector car_to_target) {
     return max(min(d / e, 3), -3);
 };
 
-double cap(value, min, max) {
-    if (value < min)
-        return min;
-    if (value > max)
-        return max;
-    return value;
-};
-
 struct jump_shot parse_slice_for_jump_shot_with_target(double time_remaining, Vector ball_location, Vector car_location, Vector car_forward, int car_boost, Vector left_target, Vector right_target, double cap_) {
     struct jump_shot r;
     r.found = -1;
@@ -280,21 +276,21 @@ struct car {
 
 _Bool is_viable(double time_remaining, double boost_accel, Vector gravity, struct car me, Vector target) {
     Vector T = double_to_vector(time_remaining);
-    Vector xf = add(add(me.location, multiply(me.velocity, T)), multiply(divide(gravity, double_to_vector(2)), equal_power(T, 2)));
+    Vector xf = add(add(me.location, multiply(me.velocity, T)), multiply(multiply(multiply(double_to_vector(0.5), gravity), T), T));
     Vector vf = add(me.velocity, multiply(gravity, T));
 
     if (me.airborne == -1) {
+        xf = add(xf, multiply(me.up, double_to_vector(jump_speed * (2 * time_remaining - jump_max_duration) + jump_acc * (time_remaining * jump_max_duration - 0.5 * jump_max_duration * jump_max_duration))));
         vf = add(vf, multiply(me.up, double_to_vector(2 * jump_speed + jump_acc * jump_max_duration)));
-        xf = add(xf, add(multiply(me.up, double_to_vector(jump_speed *  (2 * time_remaining - jump_max_duration))), double_to_vector(jump_acc * (time_remaining * jump_max_duration - pow(jump_max_duration, 2) / 2))));
     }
 
     Vector delta_x = sub(target, xf);
     Vector f = normalize(delta_x).vector;
 
-    double phi = angle(f, me.forward);
+    double phi = angle(delta_x, me.forward);
     double turn_time = 0.7 * (2 * sqrt(phi / 9));
     double tau1 = turn_time * cap(1 - 0.3 / phi, 0, 1);
-    double required_acc = (2 * magnitude(delta_x) / (pow(time_remaining - tau1, 2)));
+    double required_acc = (2 * magnitude(delta_x) / ((time_remaining - tau1) * (time_remaining - tau1)));
     double ratio = required_acc / boost_accel;
     double tau2 = time_remaining - (time_remaining - tau1) * sqrt(1 - cap(ratio, 0, 1));
     double boost_estimate = (tau2 - tau1) * 30;
@@ -319,10 +315,9 @@ struct aerial_shot parse_slice_for_aerial_shot_with_target(double time_remaining
     if (!pst_crrctn.swapped) {
         Vector left_vector = normalize(sub(pst_crrctn.left, ball_location)).vector;
         Vector right_vector = normalize(sub(pst_crrctn.right, ball_location)).vector;
-        Vector best_shot_vector = clamp(direction, left_vector, right_vector);
+        r.ball_intercept = sub(ball_location, multiply(clamp(direction, left_vector, right_vector), double_to_vector(176)));
 
-        if (in_field(sub(ball_location, multiply(best_shot_vector, double_to_vector(200))), 1) && fast_shot(me.location, ball_location, time_remaining, cap_, 250)) {
-            r.ball_intercept = sub(ball_location, multiply(best_shot_vector, double_to_vector(92)));
+        if (in_field(r.ball_intercept, 1) && fast_shot(me.location, ball_location, time_remaining, cap_, 250)) {
             double slope = find_slope(r.ball_intercept, car_to_ball);
 
             if (slope > -1 && is_viable(time_remaining, boost_accel, gravity, me, r.ball_intercept))
@@ -381,7 +376,7 @@ static PyObject *method_parse_slice_for_aerial_shot_with_target(PyObject *self, 
     double time_remaining, boost_accel, cap_;
     Vector gravity, ball_location, left_target, right_target;
 
-    if (!PyArg_ParseTuple(args, "dd(ddd)(ddd)((ddd)(ddd)(ddd)(ddd)ii)(ddd)(ddd)d", &time_remaining, &boost_accel, &gravity.x, &gravity.y, &gravity.z, &ball_location.x, &ball_location.y, &ball_location.z, &me.location.x, &me.location.y, &me.location.z, &me.velocity.x, &me.velocity.y, &me.velocity.z, &me.up.x, &me.up.x, &me.up.x, &me.forward.x, &me.forward.x, &me.forward.x, &me.airborne, &me.boost, &left_target.x, &left_target.y, &left_target.z, &right_target.x, &right_target.y, &right_target.z, &cap_))
+    if (!PyArg_ParseTuple(args, "dd(ddd)(ddd)((ddd)(ddd)(ddd)(ddd)ii)(ddd)(ddd)d", &time_remaining, &boost_accel, &gravity.x, &gravity.y, &gravity.z, &ball_location.x, &ball_location.y, &ball_location.z, &me.location.x, &me.location.y, &me.location.z, &me.velocity.x, &me.velocity.y, &me.velocity.z, &me.up.x, &me.up.y, &me.up.z, &me.forward.x, &me.forward.y, &me.forward.z, &me.airborne, &me.boost, &left_target.x, &left_target.y, &left_target.z, &right_target.x, &right_target.y, &right_target.z, &cap_))
         return NULL;
 
     struct aerial_shot data_struct = parse_slice_for_aerial_shot_with_target(time_remaining, boost_accel, gravity, ball_location, me, left_target, right_target, cap_);
@@ -394,7 +389,7 @@ static PyObject *method_parse_slice_for_aerial_shot(PyObject *self, PyObject *ar
     double time_remaining, boost_accel, cap_;
     Vector gravity, ball_location;
 
-    if (!PyArg_ParseTuple(args, "dd(ddd)(ddd)((ddd)(ddd)(ddd)(ddd)ii)d", &time_remaining, &boost_accel, &gravity.x, &gravity.y, &gravity.z, &ball_location.x, &ball_location.y, &ball_location.z, &me.location.x, &me.location.y, &me.location.z, &me.velocity.x, &me.velocity.y, &me.velocity.z, &me.up.x, &me.up.x, &me.up.x, &me.forward.x, &me.forward.x, &me.forward.x, &me.airborne, &me.boost, &cap_))
+    if (!PyArg_ParseTuple(args, "dd(ddd)(ddd)((ddd)(ddd)(ddd)(ddd)ii)d", &time_remaining, &boost_accel, &gravity.x, &gravity.y, &gravity.z, &ball_location.x, &ball_location.y, &ball_location.z, &me.location.x, &me.location.y, &me.location.z, &me.velocity.x, &me.velocity.y, &me.velocity.z, &me.up.x, &me.up.y, &me.up.z, &me.forward.x, &me.forward.y, &me.forward.z, &me.airborne, &me.boost, &cap_))
         return NULL;
 
     struct aerial_shot data_struct = parse_slice_for_aerial_shot(time_remaining, boost_accel, gravity, ball_location, me, cap_);

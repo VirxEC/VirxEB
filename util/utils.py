@@ -45,7 +45,7 @@ def defaultThrottle(agent, target_speed, direction=1.0):
     car_speed = agent.me.local(agent.me.velocity).x
     t = (target_speed * direction) - car_speed
     agent.controller.throttle = cap((t**2) * sign(t)/1000, -1.0, 1.0)
-    agent.controller.boost = t > 150 and (1300 < car_speed or target_speed - car_speed > 400) and agent.controller.throttle == 1
+    agent.controller.boost = t > 150 and car_speed < target_speed - (agent.boost_accel / 120) and agent.controller.throttle == 1
     return car_speed
 
 
