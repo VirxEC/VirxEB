@@ -137,7 +137,7 @@ class VirxEB(VirxERLU):
                                 self.push(bgs)
                                 return
 
-                        if self_loc.y + 100 > ball_loc.y and ((abs(self_loc.x) < abs(ball_loc.x) and min(self.predictions['team_from_goal']) < self.predictions['self_from_goal']) or self.predictions['own_goal']) and self.is_clear():
+                        if len(self.friends) > 1 and self_loc.y + 100 > ball_loc.y and ((abs(self_loc.x) < abs(ball_loc.x) and min(self.predictions['team_from_goal']) < self.predictions['self_from_goal']) or self.predictions['own_goal']) and self.is_clear():
                             self.push(short_shot(self.foe_goal.location))
                             return
 
@@ -316,7 +316,7 @@ class VirxEB(VirxERLU):
                             self.shoot_from(shot, defend=False, clear_on_valid=True)
 
             if self.is_clear():
-                if abs(self.ball.location.y) > 2560 or self.predictions['self_to_ball'] > 1000 and self.can_shoot is None:
+                if len(self.friends) > 1 and abs(self.ball.location.y) > 2560 or self.predictions['self_to_ball'] > 1000 and self.can_shoot is None:
                     self.push(short_shot(self.foe_goal.location))
                 else:
                     self.backcheck()
@@ -363,7 +363,7 @@ class VirxEB(VirxERLU):
                             self.shoot_from(shot, clear_on_valid=True)
 
         if self.is_clear() or self.stack[-1].__class__.__name__ in {"goto", "goto_boost", "brake", "dynamic_backcheck", "retreat"} and self.odd_tick == 0:
-            if not self.smart_shot(self.best_shot) and not self.smart_shot(self.offensive_shots[0]) and self.is_clear() and not self.me.airborne:
+            if not self.smart_shot(self.best_shot, cap=2) and not self.smart_shot(self.offensive_shots[0], cap=2) and self.is_clear():
                 if self.team == 1 and self.ball.location.y > self.me.location.y + 250:
                     self.backcheck()
                 elif self.team == 0 and self.ball.location.y < self.ball.location.y - 250:

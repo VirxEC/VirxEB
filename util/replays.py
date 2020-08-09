@@ -6,7 +6,7 @@ class back_kickoff:
         self.start_time = None
 
     def run(self, agent):
-        if self.start_time == None:
+        if self.start_time is None:
             self.start_time = agent.time
 
         time_elapsed = round(agent.time - self.start_time, 5)

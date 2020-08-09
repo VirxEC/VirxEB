@@ -315,12 +315,12 @@ struct aerial_shot parse_slice_for_aerial_shot_with_target(double time_remaining
     if (!pst_crrctn.swapped) {
         Vector left_vector = normalize(sub(pst_crrctn.left, ball_location)).vector;
         Vector right_vector = normalize(sub(pst_crrctn.right, ball_location)).vector;
-        r.ball_intercept = sub(ball_location, multiply(clamp(direction, left_vector, right_vector), double_to_vector(176)));
+        r.ball_intercept = sub(ball_location, multiply(clamp(direction, left_vector, right_vector), double_to_vector(175)));
 
         if (in_field(r.ball_intercept, 1) && fast_shot(me.location, ball_location, time_remaining, cap_, 250)) {
             double slope = find_slope(r.ball_intercept, car_to_ball);
 
-            if (slope > -1 && is_viable(time_remaining, boost_accel, gravity, me, r.ball_intercept))
+            if (slope > 0 && is_viable(time_remaining, boost_accel, gravity, me, r.ball_intercept))
                 r.found = 1;
         }
     }
@@ -333,12 +333,12 @@ struct aerial_shot parse_slice_for_aerial_shot(double time_remaining, double boo
     r.found = -1;
 
     Vector car_to_ball = sub(ball_location, me.location);
-    Vector best_shot_vector = normalize(car_to_ball).vector;
+    r.ball_intercept = sub(ball_location, multiply(normalize(car_to_ball).vector, double_to_vector(175)));
 
-    if (in_field(sub(ball_location, multiply(best_shot_vector, double_to_vector(200))), 1)) {
-        r.ball_intercept = sub(ball_location, multiply(best_shot_vector, double_to_vector(92)));
+    if (in_field(r.ball_intercept, 1)) {
+        double slope = find_slope(r.ball_intercept, car_to_ball);
 
-        if (is_viable(time_remaining, boost_accel, gravity, me, r.ball_intercept))
+        if (slope > 0 && is_viable(time_remaining, boost_accel, gravity, me, r.ball_intercept))
             r.found = 1;
     }
 

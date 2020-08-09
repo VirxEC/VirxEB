@@ -459,7 +459,7 @@ class jump_shot:
         self.shot_vector = shot_vector
         # The point we dodge at
         # 172 is the 92uu ball radius + a bit more to account for the car's hitbox
-        self.dodge_point = self.ball_location - (self.shot_vector * 176)
+        self.dodge_point = self.ball_location - (self.shot_vector * 175)
         # whether the car should attempt this backwards
         self.direction = direction
         # controls how soon car will jump based on acceleration required. max 584
@@ -512,7 +512,7 @@ class jump_shot:
         angles = defaultPD(agent, local_final_target, self.direction)
         defaultThrottle(agent, speed_required, self.direction)
 
-        agent.line(agent.me.location, agent.me.location + (self.shot_vector*176), agent.renderer.white())
+        agent.line(agent.me.location, agent.me.location + (self.shot_vector*175), agent.renderer.white())
 
         agent.controller.boost = False if abs(angles[1]) > 0.3 or agent.me.airborne else agent.controller.boost
         agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local(agent.me.velocity).x >= 900 and abs(angles[1]) > 1.57) and self.direction == 1 else agent.controller.handbrake

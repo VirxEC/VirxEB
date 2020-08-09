@@ -14,4 +14,7 @@ Searches a lot more slices from the ball prediction
 Fixed the defender coming out of the net on an opponent's break away
 More pathfinding improvements
 Smarter backchecks
-Retreat works in 2's and 1's
+Retreat works in 2's/1's
+No more shot shot in 2's/1's
+More consistant capping of shot times
+Fine tuned shot values (200 -> 175, 176 -> 175, 92 -> 175)
