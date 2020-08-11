@@ -58,16 +58,17 @@ class VirxEB(VirxERLU):
         """
         # Aerial testing
         """
-        if not self.shooting and self.ball.location.z < 100:
+        if not self.shooting and self.ball.location.z < 500:
             ball_state = BallState(Physics(location=Vector3(0, -3000 * side(self.team), self.ball.location.z), velocity=Vector3(0, 0, 2000), angular_velocity=Vector3(0, 0, 0)))
             game_state = GameState(ball=ball_state)
             self.set_game_state(game_state)
 
-        if not self.shooting:
-            self.smart_shot()
-
-        if self.is_clear():
-            self.push(goto(Vector(), self.foe_goal.location, brake=True))
+        if not self.smart_shot() and self.is_clear():
+            target = Vector()
+            if self.me.location.dist(target) > 250:
+                self.push(goto(target, self.foe_goal.location))
+            else:
+                self.push(goto(Vector(y=2560 * side(not self.team)), self.foe_goal.location, brake=True))
         """
 
     def run(self):
@@ -111,17 +112,19 @@ class VirxEB(VirxERLU):
                     # What is 175?
                     # 175 is the radius of the ball rounded up (93) plus the half the length of the longest car rounded up (breakout; 66) with an extra 10% then rounded up
                     # Basicly it's the 'is an enemy dribbling the ball' detector
-                    if self_loc.y > ball_loc.y and self.predictions['closest_enemy'] <= 175 and (self.predictions['own_goal'] or min(self.predictions['team_from_goal']) < self.predictions['self_from_goal']):
+                    if self_loc.y > ball_loc.y and self.predictions['closest_enemy'] <= 175 and (self.predictions['own_goal'] or (len(self.friends) > 0 and min(self.predictions['team_from_goal'])) < self.predictions['self_from_goal']):
                         bgs = block_ground_shot()
                         if bgs.is_viable(self):
                             self.clear()
                             self.push(bgs)
                             return
 
-                    if self_loc.y > ball_loc.y - 50 and ((ball_loc.x > 0 and ball_loc.x < 900 and self_loc.x > ball_loc.x and self.smart_shot(self.panic_shots[0], cap=2)) or (ball_loc.x < 0 and ball_loc.x > -900 and self_loc.x < ball_loc.x and self.smart_shot(self.panic_shots[1], cap=2))):
+                    max_panic_x_ball_loc = 900 if len(self.friends) >= 2 else 1200
+
+                    if self_loc.y > ball_loc.y + 50 and ((ball_loc.x > 0 and ball_loc.x < max_panic_x_ball_loc and self.smart_shot(self.panic_shots[0], cap=2)) or (ball_loc.x < 0 and ball_loc.x > -max_panic_x_ball_loc and self.smart_shot(self.panic_shots[1], cap=2))):
                         return
 
-                    if self.predictions['own_goal'] or (len(team_to_ball) > 1 and team_to_ball[math.ceil(len(team_to_ball) / 2)] + 10 > self_to_ball) or (len(team_to_ball) == 1 and self_to_ball < 2580):
+                    if self.predictions['own_goal'] or (len(team_to_ball) > 1 and team_to_ball[math.ceil(len(team_to_ball) / 2)] + 10 > self_to_ball) or (len(team_to_ball) == 1 and self_to_ball < 2560):
                         if ball_loc.y < 1280:
                             for shot in self.defensive_shots:
                                 if self.smart_shot(shot, cap=2):
@@ -130,7 +133,7 @@ class VirxEB(VirxERLU):
                         if self_loc.y > ball_loc.y and team_to_ball[0] is self_to_ball and self.smart_shot(weight=self.max_shot_weight - 1, cap=2):
                             return
 
-                        if self.predictions['own_goal']:
+                        if self.predictions['own_goal'] and abs(self_loc.x) < abs(ball_loc.x) - 100 and self_loc.y < ball_loc.y - 50:
                             bgs = block_ground_shot()
                             if bgs.is_viable(self):
                                 self.clear()
@@ -264,15 +267,42 @@ class VirxEB(VirxERLU):
                 self.backcheck()
         elif self.odd_tick % 2 == 0 and self.shooting and not self.me.airborne and self.can_shoot is None:
             shot = self.get_shot(self.best_shot)
-            if shot is None:
-                shot = self.get_shot(self.offensive_shots[0], cap=2.5)
+            if shot is None and self.shot_weight is self.max_shot_weight and len(self.friends) > 0:
+                shot = self.get_shot(self.offensive_shots[0])
 
-            if shot is not None:
-                if shot['intercept_time'] < self.shot_time - 0.05:
-                    self.shoot_from(shot, clear_on_valid=True)
+            if shot is not None and shot['intercept_time'] < self.shot_time - 0.05:
+                self.shoot_from(shot, clear_on_valid=True)
+                return
 
-        if self.is_clear() or self.stack[-1].__class__.__name__ in {"goto", "goto_boost", "brake", "dynamic_backcheck", "retreat"} and self.odd_tick == 0:
-            if not self.smart_shot(self.best_shot) and not self.smart_shot(self.offensive_shots[0], cap=2.5) and self.is_clear():
+            if self.ball.location.y * side(self.team) > -1280:
+                if self.me.location.y * side(self.team) > self.ball.location.y * side(self.team) and self.smart_shot():
+                    return
+
+                for i, shot in enumerate(self.defensive_shots[1:]):
+                    shot_weight = get_weight(self, index=i)
+
+                    if shot_weight < self.shot_weight:
+                        break
+
+                    shot = self.get_shot(shot)
+
+                    if shot is not None:
+                        self.shoot_from(shot, clear_on_valid=True)
+                        return
+
+        if (self.is_clear() or not self.shooting) and self.odd_tick == 0:
+            if not self.smart_shot(self.best_shot, cap=2 if self.can_shoot is None else 1) and (len(self.friends) == 0 or self.can_shoot is not None or not self.smart_shot(self.offensive_shots[0], cap=2.5)) and self.is_clear():
+                if self.ball.location.y * side(self.team) > -1280:
+                    if self.me.location.y * side(self.team) > self.ball.location.y * side(self.team) and self.smart_shot(cap=1.5):
+                        return
+
+                    for i, shot in enumerate(self.defensive_shots[1:]):
+                        shot = self.get_shot(shot, cap=1.5)
+
+                        if shot is not None:
+                            self.shoot_from(shot)
+                            return
+
                 self.backcheck()
 
     def neutral_air(self):
@@ -295,8 +325,19 @@ class VirxEB(VirxERLU):
                     shot = self.get_shot(self.best_shot, cap=2)
 
                     if shot is not None:
-                        self.shoot_from(shot, defend=False, clear_on_valid=True)
+                        self.shoot_from(shot, clear_on_valid=True)
                 elif self.can_shoot is None:
+                    if self.ball.location.y * side(self.team) > -1280:
+                        if self.me.location.y * side(self.team) > self.ball.location.y * side(self.team) and self.smart_shot(cap=1.5):
+                            return
+
+                        for i, shot in enumerate(self.defensive_shots[1:]):
+                            shot = self.get_shot(shot, cap=1.5)
+
+                            if shot is not None:
+                                self.shoot_from(shot)
+                                return
+
                     shots = [self.offensive_shots[0]]
                     if self.ball.location.x * side(not self.team) > 1000:
                         shots.append(self.offensive_shots[1])
@@ -314,60 +355,67 @@ class VirxEB(VirxERLU):
 
                         if shot is not None:
                             self.shoot_from(shot, defend=False, clear_on_valid=True)
+                            return
 
             if self.is_clear():
-                if len(self.friends) > 1 and abs(self.ball.location.y) > 2560 or self.predictions['self_to_ball'] > 1000 and self.can_shoot is None:
+                if len(self.friends) > 1 and (abs(self.ball.location.y) > 2560 or self.predictions['self_to_ball'] > 1000) and self.can_shoot is None:
                     self.push(short_shot(self.foe_goal.location))
                 else:
                     self.backcheck()
         elif self.odd_tick % 2 == 0 and self.shooting and self.can_shoot is None:
             if self.predictions['goal'] or (self.foe_goal.location.dist(self.ball.location) <= 1500 and (self.predictions['closest_enemy'] > 1400 or self.foe_goal.location.dist(self.me.location) < self.predictions['closest_enemy'] + 250)):
                 self.line(*self.best_shot, self.renderer.team_color(alt_color=True))
-                shot = self.get_shot(self.best_shot, cap=2)
+                shot = self.get_shot(self.best_shot)
 
                 if shot is not None:
-                    if self.max_shot_weight is self.shot_weight:
-                        if shot['intercept_time'] < self.shot_time - 0.05:
-                            self.shoot_from(shot, clear_on_valid=True)
-                    elif shot['intercept_time'] <= min(self.shot_time + (self.max_shot_weight - self.shot_weight / 3), 5):
-                        self.shoot_from(shot, clear_on_valid=True)
+                    self.shoot_from(shot, clear_on_valid=True)
             elif self.odd_tick == 0:
-                shots = [self.offensive_shots[0]]
-                if self.ball.location.x * side(not self.team) > 1000:
-                    shots.append(self.offensive_shots[1])
-                elif self.ball.location.x * side(not self.team) < -1000:
-                    shots.append(self.offensive_shots[2])
+                if self.ball.location.y * side(self.team) > -1280:
+                    if self.me.location.y * side(self.team) > self.ball.location.y * side(self.team) and self.smart_shot():
+                        return
 
-                for o_shot in shots:
-                    self.line(*o_shot, self.renderer.team_color(alt_color=True))
-
-                for i, o_shot in enumerate(shots):
-                    shot = None
-                    if i == 0:
-                        shot_weight = self.max_shot_weight + 1
-                        shot = self.get_shot(self.best_shot, cap=2)
-
-                    if shot is None:
+                    for i, shot in enumerate(self.defensive_shots[1:]):
                         shot_weight = get_weight(self, index=i)
 
                         if shot_weight < self.shot_weight:
                             break
 
-                        shot = self.get_shot(o_shot, weight=shot_weight, cap=2)
+                        shot = self.get_shot(shot)
 
-                    if shot is not None:
-                        if shot_weight is self.shot_weight:
-                            if shot['intercept_time'] < self.shot_time - 0.05:
-                                self.shoot_from(shot, clear_on_valid=True)
-                        elif shot['intercept_time'] <= min(self.shot_time + (shot_weight - self.shot_weight / 3), 5):
+                        if shot is not None:
                             self.shoot_from(shot, clear_on_valid=True)
+                            return
+                else:
+                    shots = [self.offensive_shots[0]]
+                    if self.ball.location.x * side(not self.team) > 1000:
+                        shots.append(self.offensive_shots[1])
+                    elif self.ball.location.x * side(not self.team) < -1000:
+                        shots.append(self.offensive_shots[2])
 
-        if self.is_clear() or self.stack[-1].__class__.__name__ in {"goto", "goto_boost", "brake", "dynamic_backcheck", "retreat"} and self.odd_tick == 0:
-            if not self.smart_shot(self.best_shot, cap=2) and not self.smart_shot(self.offensive_shots[0], cap=2) and self.is_clear():
-                if self.team == 1 and self.ball.location.y > self.me.location.y + 250:
-                    self.backcheck()
-                elif self.team == 0 and self.ball.location.y < self.ball.location.y - 250:
-                    self.backcheck()
+                    for o_shot in shots:
+                        self.line(*o_shot, self.renderer.team_color(alt_color=True))
+
+                    for i, o_shot in enumerate(shots):
+                        shot = None
+                        if i == 0:
+                            shot_weight = self.max_shot_weight + 1
+                            shot = self.get_shot(self.best_shot, weight=shot_weight)
+
+                        if shot is None:
+                            shot_weight = get_weight(self, index=i)
+
+                            if shot_weight < self.shot_weight:
+                                break
+
+                            shot = self.get_shot(o_shot, weight=shot_weight)
+
+                        if shot is not None:
+                            self.shoot_from(shot, clear_on_valid=True)
+                            return
+
+        if (self.is_clear() or not self.shooting) and self.odd_tick == 0:
+            if not self.smart_shot(self.best_shot, cap=2 if self.can_shoot is None else 1) and (self.can_shoot is not None or not self.smart_shot(self.offensive_shots[0], cap=2.5)) and self.is_clear() and self.ball.location.y * side(self.team) > self.me.location.y - 250:
+                self.backcheck()
 
     def attack_air(self):
         if self.odd_tick % 2 == 0 and self.can_shoot is None and self.me.boost > 12 and not self.shooting:
@@ -390,32 +438,40 @@ class VirxEB(VirxERLU):
 
     def get_shot(self, target=None, weight=None, cap=None):
         if self.can_shoot is None:
-            final = shot = aerial_shot = None
+            jump_shot = aerial_shot = None
 
-            if self.me.airborne or self.air_bud:
-                if self.me.boost < 24:
-                    return
+            if weight is None:
+                weight = get_weight(self, target)
 
-                aerial_shot = find_any_aerial(self, cap_=3 if cap is None or cap > 3 else cap) if target is None else find_aerial(self, target, cap_=4 if cap is None or cap > 4 else cap)
-            elif target is not None:
-                shot = find_jump_shot(self, target, cap_=6 if cap is None else cap)
-                aerial_shot = find_aerial(self, target, cap_=4 if cap is None or cap > 4 else cap) if self.me.boost > 24 else None
+            if target is not None:
+                if not self.me.airborne and not self.air_bud:
+                    jump_shot = find_jump_shot(self, target, weight=weight, cap_=6 if cap is None else cap)
+
+                aerial_shot = find_aerial(self, target, weight=weight, cap_=4 if cap is None or cap > 4 else cap)
             else:
-                shot = find_any_jump_shot(self, cap_=6 if cap is None else cap)
-                aerial_shot = find_any_aerial(self, cap_=4 if cap is None or cap > 4 else cap) if self.me.boost > 24 else None
+                if not self.me.airborne and not self.air_bud:
+                    jump_shot = find_any_jump_shot(self, cap_=6 if cap is None else cap)
 
-            if shot is not None:
-                final = aerial_shot if aerial_shot is not None and aerial_shot.intercept_time <= shot.intercept_time else shot
-            elif aerial_shot is not None:
-                final = aerial_shot
+                aerial_shot = find_any_aerial(self, cap_=4 if cap is None or cap > 4 else cap)
 
-            if final is None:
+            shots = []
+
+            if aerial_shot is not None:
+                shots.append(aerial_shot)
+
+            if jump_shot is not None:
+                shots.append(jump_shot)
+
+            if len(shots) == 0:
                 return
 
+            if len(shots) == 2:
+                shots.sort(key=lambda shot: shot.intercept_time)
+
             return {
-                "weight": get_weight(self, target) if weight is None else weight,
-                "intercept_time": final.intercept_time,
-                "shot": final
+                "weight": weight,
+                "intercept_time": shots[0].intercept_time,
+                "shot": shots[0]
             }
 
         return

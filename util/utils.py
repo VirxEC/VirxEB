@@ -195,6 +195,8 @@ def get_weight(agent, shot=None, index=None):
             except ValueError:
                 continue
 
+    return agent.max_shot_weight - 1
+
 
 def peek_generator(generator):
     try:

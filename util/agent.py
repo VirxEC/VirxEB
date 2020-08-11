@@ -1,5 +1,6 @@
 import itertools
 import math
+from time import time_ns
 from dataclasses import dataclass
 from enum import Enum
 from traceback import print_exc
@@ -22,13 +23,12 @@ class VirxERLU(BaseAgent):
     # Massive thanks to ddthj/GoslingAgent (GitHub repo) for the basis of VirxERLU
     def initialize_agent(self):
         self.tournament = False
+        self.startup_time = time_ns()
 
         if not self.tournament:
             self.gui = Gui(self)
             self.print("Starting the GUI...")
             self.gui.start()
-        elif self.name in {"VirxEB", "VirxEB-dev"}:
-            print(f"\nThis is a tournament! YAY!!! Thanks for letting me, VirxEB, participate. Just for you, my brothers and I will start in minimal output mode.\n")
 
         self.predictions = {
             "closest_enemy": 0,
@@ -92,7 +92,7 @@ class VirxERLU(BaseAgent):
         self.ball_to_goal = -1
 
         self.ball = ball_object()
-        self.game = game_object(not self.team)
+        self.game = game_object()
 
         self.boosts = ()
 
@@ -169,10 +169,16 @@ class VirxERLU(BaseAgent):
 
         self.max_shot_weight = 4
 
+        self.best_shot_value = math.floor(92.75 + packet.game_cars[self.index].hitbox.width / 2)
+        self.print(f"Best shot value: {self.best_shot_value}")
+
         self.init()
 
         self.ready = True
-        self.print("Built")
+
+        load_time = (time_ns() - self.startup_time) / 1e+6
+        team = "Blue" if self.team == 0 else "Red"
+        print(f"{self.name} ({team}): Built game info in {load_time} milliseconds")
 
     def refresh_player_lists(self, packet):
         # Useful to keep separate from get_ready because humans can join/leave a match
@@ -232,7 +238,7 @@ class VirxERLU(BaseAgent):
 
         self.ball.update(packet)
         self.me.update(packet)
-        self.game.update(packet)
+        self.game.update(self.team, packet)
         self.time = self.game.time
 
         # When a new kickoff begins we empty the stack
@@ -254,9 +260,8 @@ class VirxERLU(BaseAgent):
 
     def get_output(self, packet):
         try:
-            if not self.disable_driving:
-                # Reset controller
-                self.controller.__init__()
+            # Reset controller
+            self.controller.__init__()
 
             # Get ready, then preprocess
             if not self.ready:
@@ -422,15 +427,17 @@ class goal_object:
 
 class game_object:
     # This object holds information about the current match
-    def __init__(self, team):
+    def __init__(self):
         self.time = 0
         self.time_remaining = 0
         self.overtime = False
         self.round_active = False
         self.kickoff = False
         self.match_ended = False
+        self.friend_score = 0
+        self.foe_score = 0
 
-    def update(self, packet):
+    def update(self, team, packet):
         game = packet.game_info
         self.time = game.seconds_elapsed
         self.time_remaining = game.game_time_remaining
@@ -438,6 +445,8 @@ class game_object:
         self.round_active = game.is_round_active
         self.kickoff = game.is_kickoff_pause
         self.match_ended = game.is_match_ended
+        self.friend_score = packet.teams[team].score
+        self.foe_score = packet.teams[not team].score
 
 
 class Matrix3:

@@ -15,6 +15,11 @@ Fixed the defender coming out of the net on an opponent's break away
 More pathfinding improvements
 Smarter backchecks
 Retreat works in 2's/1's
-No more shot shot in 2's/1's
 More consistant capping of shot times
-Fine tuned shot values (200 -> 175, 176 -> 175, 92 -> 175)
+Fine tuned shot values (auto calculated on start)
+Removed minimum boost requirement (was 24) on aerials
+Fixed errors caused by having no teammates
+In 2's, if VirxEB is either up down by 2, he will start to play more defensive
+More agressive in 1's (sometimes)
+More passive in 1's (sometimes)
+Neutral and Offensive playstyles try to keep the ball in the opponent's zone
