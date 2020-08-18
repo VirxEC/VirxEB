@@ -70,6 +70,124 @@ class wave_dash:
                 agent.pop()
 
 
+class double_jump:
+    def __init__(self, ball_location, intercept_time, shot_vector, best_shot_value):
+        self.ball_location = ball_location
+        self.intercept_time = intercept_time
+        self.shot_vector = shot_vector
+        self.dodge_point = self.ball_location - (self.shot_vector * best_shot_value)
+        # Flags for what part of the routine we are in
+        self.debug_start = True
+        self.jumping = False
+        self.dodged = False
+        self.jump_time = -1
+        self.counter = 0
+
+    def run(self, agent):
+        # This routine is the same as jump_shot, but it's designed to hit the ball above 300uu's (and below 551uu's or so) without any boost
+        if not agent.shooting:
+            agent.shooting = True
+
+        if self.debug_start:
+            agent.print(f"Hit ball via double jump {round(agent.me.location.dist(self.dodge_point), 4)}uu's away in {round(self.intercept_time - agent.time, 4)}s")
+            self.debug_start = False
+
+        raw_time_remaining = self.intercept_time - agent.time
+        # Capping raw_time_remaining above 0 to prevent division problems
+        time_remaining = cap(raw_time_remaining, 0.001, 10.0)
+        car_to_ball = self.ball_location - agent.me.location
+        # whether we should go forwards or backwards
+        angle_to_target = abs(Vector(x=1).angle(agent.me.local(car_to_ball)))
+        direction = 1 if angle_to_target < 2.2 else -1
+        # whether we are to the left or right of the shot vector
+        side_of_shot = sign(self.shot_vector.cross(Vector(z=1)).dot(car_to_ball))
+
+        car_to_dodge_point = self.dodge_point - agent.me.location
+        car_to_dodge_perp = car_to_dodge_point.cross(Vector(z=side_of_shot))  # perpendicular
+        distance_remaining = car_to_dodge_point.magnitude()
+
+        speed_required = distance_remaining / time_remaining
+        acceleration_required = backsolve(self.dodge_point, agent.me, time_remaining, 0 if not self.jumping else agent.gravity.z)
+        local_acceleration_required = agent.me.local(acceleration_required)
+
+        # The adjustment causes the car to circle around the dodge point in an effort to line up with the shot vector
+        # The adjustment slowly decreases to 0 as the bot nears the time to jump
+        adjustment = car_to_dodge_point.angle(self.shot_vector) * distance_remaining / 2.0  # size of adjustment
+        # controls how soon car will jump based on acceleration required
+        # bigger == later and smaller == sooner
+        # Max 584, min 1
+        # Any thing below 250 might cause it to whiff
+        # Anything above 400 might cause it to not hit it on target
+        # 551 is the highest point that this double jump routine can hit the ball at
+        jump_threshold = cap(551 - self.dodge_point.z, 250, 400)
+        # factoring in how close to jump we are
+        adjustment *= (cap(jump_threshold - (acceleration_required.z), 0, jump_threshold) / jump_threshold)
+        # we don't adjust the final target if we are already jumping
+        final_target = self.dodge_point + ((car_to_dodge_perp.normalize() * adjustment) if not self.jumping else 0) + Vector(z=50)
+        # Ensuring our target isn't too close to the sides of the field, where our car would get messed up by the radius of the curves
+
+        # Some adjustment to the final target to ensure it's inside the field and we don't try to drive through any goalposts to reach it
+        if abs(agent.me.location.y) > 5120 - (agent.me.hitbox.width / 2):
+            final_target.x = cap(final_target.x, -750, 750)
+
+        local_final_target = agent.me.local(final_target - agent.me.location)
+
+        # drawing debug lines to show the dodge point and final target (which differs due to the adjustment)
+        agent.line(agent.me.location, self.dodge_point, agent.renderer.white())
+        agent.line(self.dodge_point-Vector(z=100), self.dodge_point+Vector(z=100), agent.renderer.red())
+        agent.line(final_target-Vector(z=100), final_target+Vector(z=100), agent.renderer.green())
+
+        if not self.jumping:
+            defaultPD(agent, local_final_target, direction)
+            defaultThrottle(agent, speed_required, direction)
+            agent.controller.handbrake = (angle_to_target >= 2.3 or (agent.me.local(agent.me.velocity).x >= 900 and angle_to_target > 1.57)) and direction == 1
+
+            velocity = 1+agent.me.velocity.magnitude()
+            if raw_time_remaining <= 0 or (speed_required - 2300) * time_remaining > 45 or not shot_valid(agent, self):
+                # If we're out of time or not fast enough to be within 45 units of target at the intercept time, we pop
+                agent.pop()
+                agent.shooting = False
+                agent.shot_weight = -1
+                agent.shot_time = -1
+                if agent.me.airborne:
+                    agent.push(recovery())
+            elif local_acceleration_required.z > jump_threshold and local_acceleration_required.z > local_acceleration_required.flatten().magnitude() and angle_to_target < 0.25:
+                # Switch into the jump when the upward acceleration required reaches our threshold, and our lateral acceleration is negligible
+                self.jumping = True
+            elif angle_to_target < 0.05 and distance_remaining > 2560 and velocity > 600 and velocity < speed_required - 150 and distance_remaining / velocity > 2:
+                agent.push(flip(local_final_target))
+            elif angle_to_target >= 1.57 and distance_remaining > 1000 and velocity < 200 and distance_remaining / velocity > 2:
+                agent.push(flip(local_final_target, True))
+            elif agent.me.airborne:
+                agent.push(recovery(local_final_target))
+        else:
+            jump_elapsed = agent.time - self.jump_time
+
+            if (raw_time_remaining > 0.2 and not shot_valid(agent, self, 150)) or raw_time_remaining <= -0.9 or (not agent.me.airborne and self.counter > 0):
+                agent.pop()
+                agent.shooting = False
+                agent.shot_weight = -1
+                agent.shot_time = -1
+                agent.push(recovery())
+            elif self.counter == 0 and (self.jump_time == -1 or jump_elapsed < jump_max_duration):
+                agent.dbg_2d(local_acceleration_required.z > 0 and raw_time_remaining > 0.083)
+                if local_acceleration_required.z > 0 and raw_time_remaining > 0.083:
+                    if self.jump_time == -1:
+                        self.jump_time = agent.time
+                    # Initial jump to get airborne + we hold the jump button for extra power as required
+                    agent.controller.jump = True
+            elif self.counter < 3:
+                # make sure we aren't jumping for at least 3 frames
+                defaultPD(agent, local_final_target, upside_down=True)
+                self.counter += 1
+            elif jump_elapsed < 0.3 and not self.dodged:
+                agent.controller.jump = True
+                self.dodged = True
+            elif jump_elapsed >= 0.3 or self.dodged:
+                defaultPD(agent, local_final_target, upside_down=True)
+                agent.controller.boost = abs(Vector(x=1).angle3D(agent.me.local(car_to_ball))) < 0.1 and agent.me.local(agent.me.velocity).x < 2300 - (agent.boost_accel / 120)
+
+
 class Aerial:
     def __init__(self, ball_intercept, intercept_time):
         self.target = ball_intercept
@@ -84,7 +202,7 @@ class Aerial:
         if not agent.shooting:
             agent.shooting = True
 
-        if self.time is -1:
+        if self.time == -1:
             elapsed = 0
             self.time = agent.time
             agent.print(f"Hit ball via aerial {round(agent.me.location.dist(self.target), 4)}uu's away in {round(self.intercept_time - self.time, 4)}s")
@@ -93,26 +211,20 @@ class Aerial:
 
         T = self.intercept_time - agent.time
         xf = agent.me.location + agent.me.velocity * T + 0.5 * agent.gravity * T ** 2
-        vf = agent.me.velocity + agent.gravity * T
 
         if self.jumping and agent.me.location.z < 2044 - agent.me.hitbox.height * 1.1:
-            agent.dbg_2d(f"Jumping")
+            agent.dbg_2d("Jumping")
             if self.jump_time == -1:
-                jump_elapsed = 0
                 self.jump_time = agent.time
-            else:
-                jump_elapsed = agent.time - self.jump_time
+
+            jump_elapsed = agent.time - self.jump_time
 
             tau = jump_max_duration - jump_elapsed
 
             if jump_elapsed == 0:
-                vf += agent.me.up * jump_speed
                 xf += agent.me.up * jump_speed * T
 
-            vf += agent.me.up * jump_acc * tau
             xf += agent.me.up * jump_acc * tau * (T - 0.5 * tau)
-
-            vf += agent.me.up * jump_speed
             xf += agent.me.up * jump_speed * (T - tau)
 
             if jump_elapsed < jump_max_duration:
@@ -138,18 +250,14 @@ class Aerial:
         agent.line(self.target - Vector(z=100), self.target + Vector(z=100), agent.renderer.green())
         agent.line(agent.me.location, direction, agent.renderer.red())
 
-        defaultPD(agent, agent.me.local(delta_x if delta_x.magnitude() > 50 else self.target), upside_down=self.ceiling)
-
-        if jump_max_duration <= elapsed and elapsed < 0.3 and self.counter ** 3:
-            agent.controller.roll = agent.controller.pitch = agent.controller.yaw = agent.controller.steer = 0
+        if not (jump_max_duration <= elapsed and elapsed < 0.3 and self.counter == 3):
+            defaultPD(agent, agent.me.local(delta_x if delta_x.magnitude() > 50 else self.target), upside_down=self.ceiling)
 
         if agent.me.forward.angle3D(direction) < 0.3:
             if delta_x.magnitude() > 50:
                 agent.controller.boost = 1
             else:
                 agent.controller.throttle = cap(0.5 * throttle_accel * T * T, 0, 1)
-        else:
-            agent.controller.boost = agent.controller.throttle = 0
 
         still_valid = shot_valid(agent, self, threshold=250, target=self.target)
 
@@ -427,9 +535,7 @@ class jump_shot:
     def __init__(self, ball_location, intercept_time, shot_vector, best_shot_value):
         self.ball_location = ball_location
         self.intercept_time = intercept_time
-        # The direction we intend to hit the ball in
         self.shot_vector = shot_vector
-        # The point we dodge at
         self.dodge_point = self.ball_location - (self.shot_vector * best_shot_value)
         # Flags for what part of the routine we are in
         self.jumping = False
@@ -482,14 +588,12 @@ class jump_shot:
         agent.line(self.dodge_point-Vector(z=100), self.dodge_point+Vector(z=100), agent.renderer.red())
         agent.line(final_target-Vector(z=100), final_target+Vector(z=100), agent.renderer.green())
 
-        defaultPD(agent, local_final_target, direction)
-        defaultThrottle(agent, speed_required, direction)
-
-        agent.line(agent.me.location, agent.me.location + (self.shot_vector * agent.best_shot_value), agent.renderer.white())
-
-        agent.controller.handbrake = (angle_to_target >= 2.3 or (agent.me.local(agent.me.velocity).x >= 900 and angle_to_target > 1.57)) and direction == 1
-
         if not self.jumping:
+            defaultPD(agent, local_final_target, direction)
+            defaultThrottle(agent, speed_required, direction)
+
+            agent.controller.handbrake = (angle_to_target >= 2.3 or (agent.me.local(agent.me.velocity).x >= 900 and angle_to_target > 1.57)) and direction == 1
+
             velocity = 1+agent.me.velocity.magnitude()
             if raw_time_remaining <= 0 or (speed_required - 2300) * time_remaining > 45 or not shot_valid(agent, self):
                 # If we're out of time or not fast enough to be within 45 units of target at the intercept time, we pop
@@ -823,7 +927,6 @@ class boost_upwards:
             if jump_elapsed < jump_max_duration:
                 agent.controller.jump = True
             elif jump_elapsed >= jump_max_duration and self.counter < 3:
-                agent.controller.jump = False
                 self.counter += 1
             elif jump_elapsed < 0.3:
                 agent.controller.jump = True

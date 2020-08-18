@@ -1,13 +1,13 @@
 from traceback import print_exc
 
-# from rlbot.utils.game_state_util import BallState, GameState, Physics
-# from rlbot.utils.game_state_util import Vector3
+from rlbot.utils.game_state_util import BallState, GameState, Physics
+from rlbot.utils.game_state_util import Vector3
 from rlbot.utils.structures.quick_chats import QuickChats
 
 from util.agent import math, VirxERLU, Vector
-from util.routines import goto_boost, ball_recovery, short_shot, generic_kickoff, dynamic_backcheck, retreat, block_ground_shot, corner_kickoff, ceiling_shot
+from util.routines import goto_boost, ball_recovery, short_shot, generic_kickoff, dynamic_backcheck, retreat, block_ground_shot, corner_kickoff, ceiling_shot, face_target, goto
 from util.replays import back_kickoff
-from util.tools import find_jump_shot, find_aerial, find_any_aerial, find_any_jump_shot
+from util.tools import find_jump_shot, find_aerial, find_any_aerial, find_any_jump_shot, find_double_jump, find_any_double_jump
 from util.utils import side, almost_equals, send_comm, get_weight, peek_generator
 
 
@@ -60,19 +60,16 @@ class VirxEB(VirxERLU):
             self.backcheck()
         """
         # Shot testing
-        """
-        if not self.shooting and self.ball.location.z < 500:
+        ""
+        if not self.shooting and self.ball.location.z < 250 and not self.predictions['goal']:
             ball_state = BallState(Physics(location=Vector3(0, -3000 * side(self.team), self.ball.location.z), velocity=Vector3(0, 0, 2000), angular_velocity=Vector3(0, 0, 0)))
             game_state = GameState(ball=ball_state)
             self.set_game_state(game_state)
 
-        if not self.smart_shot() and self.is_clear():
-            target = Vector()
-            if self.me.location.dist(target) > 250:
-                self.push(goto(target, self.foe_goal.location))
-            else:
-                self.push(goto(Vector(y=2560 * side(not self.team)), self.foe_goal.location, brake=True))
-        """
+        if self.is_clear() and not self.smart_shot(self.best_shot) and self.me.location.dist(self.debug_vector) > 250:
+            self.push(face_target(ball=True))
+            self.push(goto(self.debug_vector, brake=True))
+        ""
         # Recovery testing
         """
         self.dbg_2d(f"Has jump: {not self.me.jumped}")
@@ -90,9 +87,6 @@ class VirxEB(VirxERLU):
         if self.is_clear():
             self.push(ceiling_shot())
         """
-        self.dbg_2d(abs(Vector(x=1).angle(self.me.local(self.ball.location - self.me.location))))
-        if self.is_clear():
-            self.push(retreat())
 
     def run(self):
         if not self.kickoff_done:
@@ -472,21 +466,27 @@ class VirxEB(VirxERLU):
 
     def get_shot(self, target=None, weight=None, cap=None):
         if self.can_shoot is None:
-            jump_shot = aerial_shot = None
+            jump_shot = aerial_shot = double_jump = None
 
             if weight is None:
                 weight = get_weight(self, target)
 
             if target is not None:
-                if not self.me.airborne and not self.air_bud:
-                    jump_shot = find_jump_shot(self, target, weight=weight, cap_=6 if cap is None else cap)
+                if not self.me.airborne:
+                    if not self.air_bud:
+                        jump_shot = find_jump_shot(self, target, weight=weight, cap_=6 if cap is None else cap)
+
+                    double_jump = find_double_jump(self, target, weight=weight, cap_=6 if cap is None else cap)
 
                 aerial_shot = find_aerial(self, target, weight=weight, cap_=4 if cap is None or cap > 4 else cap)
             else:
-                if not self.me.airborne and not self.air_bud:
-                    jump_shot = find_any_jump_shot(self, cap_=6 if cap is None else cap)
+                if not self.me.airborne:
+                    if not self.air_bud:
+                        jump_shot = find_any_jump_shot(self, cap_=3 if cap is None else cap)
 
-                aerial_shot = find_any_aerial(self, cap_=4 if cap is None or cap > 4 else cap)
+                    double_jump = find_any_double_jump(self, cap_=3 if cap is None else cap)
+
+                aerial_shot = find_any_aerial(self, cap_=3 if cap is None or cap > 4 else cap)
 
             shots = []
 
@@ -495,6 +495,9 @@ class VirxEB(VirxERLU):
 
             if jump_shot is not None:
                 shots.append(jump_shot)
+
+            if double_jump is not None:
+                shots.append(double_jump)
 
             if len(shots) == 0:
                 return

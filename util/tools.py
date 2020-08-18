@@ -1,5 +1,5 @@
 import virxrlcu
-from util.routines import Aerial, jump_shot
+from util.routines import Aerial, jump_shot, double_jump
 from util.utils import Vector, math
 
 
@@ -39,7 +39,7 @@ def find_jump_shot(agent, target, weight=None, cap_=6):
             return  # abandon search if ball is scored at/after this point
 
         # If the ball is above what this function can handle, don't bother with any further processing and skip to the next slice
-        if ball_location[2] > 275:
+        if ball_location[2] > 300:
             continue
 
         # Check if we can make a shot at this slice
@@ -75,13 +75,84 @@ def find_any_jump_shot(agent, cap_=3):
         if abs(ball_location[1]) > 5212:
             return
 
-        if ball_location[2] > 275:
+        if ball_location[2] > 300:
             continue
 
         shot = virxrlcu.parse_slice_for_jump_shot(time_remaining, agent.best_shot_value, ball_location, *me, cap_)
 
         if shot['found'] == 1:
             return jump_shot(Vector(*ball_location), intercept_time, Vector(*shot['best_shot_vector']), agent.best_shot_value)
+
+
+def find_double_jump(agent, target, weight=None, cap_=6):
+    slices = get_slices(agent, cap_, weight=weight)
+
+    if slices is None:
+        return
+
+    target = (
+        target[0].tuple(),
+        target[1].tuple()
+    )
+
+    me = (
+        agent.me.location.tuple(),
+        agent.me.forward.tuple(),
+        agent.me.boost
+    )
+
+    for ball_slice in slices:
+        intercept_time = ball_slice.game_seconds
+        time_remaining = intercept_time - agent.time
+
+        if time_remaining <= 0:
+            continue
+
+        ball_location = (ball_slice.physics.location.x, ball_slice.physics.location.y, ball_slice.physics.location.z)
+
+        if abs(ball_location[1]) > 5212:
+            return
+
+        if ball_location[2] > 551 or ball_location[2] < 250:
+            continue
+
+        shot = virxrlcu.parse_slice_for_double_jump_with_target(time_remaining, agent.best_shot_value, ball_location, *me, *target, cap_)
+
+        if shot['found'] == 1:
+            return double_jump(Vector(*ball_location), intercept_time, Vector(*shot['best_shot_vector']), agent.best_shot_value)
+
+
+def find_any_double_jump(agent, cap_=3):
+    slices = get_slices(agent, cap_)
+
+    if slices is None:
+        return
+
+    me = (
+        agent.me.location.tuple(),
+        agent.me.forward.tuple(),
+        agent.me.boost
+    )
+
+    for ball_slice in slices:
+        intercept_time = ball_slice.game_seconds
+        time_remaining = intercept_time - agent.time
+
+        if time_remaining <= 0:
+            continue
+
+        ball_location = (ball_slice.physics.location.x, ball_slice.physics.location.y, ball_slice.physics.location.z)
+
+        if abs(ball_location[1]) > 5212:
+            return
+
+        if ball_location[2] > 551 or ball_location[2] < 250:
+            continue
+
+        shot = virxrlcu.parse_slice_for_double_jump(time_remaining, agent.best_shot_value, ball_location, *me, cap_)
+
+        if shot['found'] == 1:
+            return double_jump(Vector(*ball_location), intercept_time, Vector(*shot['best_shot_vector']), agent.best_shot_value)
 
 
 def find_aerial(agent, target, weight=None, cap_=4):
@@ -107,7 +178,7 @@ def find_aerial(agent, target, weight=None, cap_=4):
     gravity = agent.gravity.tuple()
 
     max_aerial_height = 643 if len(agent.friends) == 0 and len(agent.foes) == 1 else math.inf
-    min_aerial_height = 643 if max_aerial_height > 643 and agent.me.location.z >= 2044 - agent.me.hitbox.height * 1.1 else 275
+    min_aerial_height = 643 if max_aerial_height > 643 and agent.me.location.z >= 2044 - agent.me.hitbox.height * 1.1 else 500
 
     for ball_slice in slices:
         intercept_time = ball_slice.game_seconds
@@ -147,8 +218,8 @@ def find_any_aerial(agent, cap_=3):
 
     gravity = agent.gravity.tuple()
 
-    max_aerial_height = 643 if len(agent.friends) == 0 and len(agent.foes) == 1 else math.inf
-    min_aerial_height = 643 if max_aerial_height > 643 and agent.me.location.z >= 2044 - agent.me.hitbox.height * 1.1 else 275
+    max_aerial_height = 735 if len(agent.friends) == 0 and len(agent.foes) == 1 else math.inf
+    min_aerial_height = 551 if max_aerial_height > 643 and agent.me.location.z >= 2044 - agent.me.hitbox.height * 1.1 else 500
 
     for ball_slice in slices:
         intercept_time = ball_slice.game_seconds

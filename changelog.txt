@@ -33,3 +33,9 @@ Backing checking now considers where the ball will be, instead of where the ball
 Jump shot now auto-calculates the jump threshold
 In 2's, if VirxEB is ever down by 2 (or more), he will play more defensivly for the rest of the game
 Remove units per second requirement in favor of cap/cap_
+The height cap on backwards jump shots is now the same as a forwards jump shot
+Added double jumps, which is a jump shot but it uses the dodge for extra height
+Properly capped shots without a target at 3 seconds
+Fixed backwards jump shots
+Backwards jump shots no longer have to be within 1/2 the cap/cap_
+Bots can now boost in the air via default_throttle

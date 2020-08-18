@@ -48,7 +48,7 @@ class VirxERLU(BaseAgent):
         self.air_bud = False
 
         self.debug = [[], []]
-        self.debugging = False
+        self.debugging = not self.tournament
         self.debug_lines = True
         self.debug_3d_bool = True
         self.debug_stack_bool = True
@@ -124,7 +124,7 @@ class VirxERLU(BaseAgent):
         self.shot_weight = -1
         self.shot_time = -1
 
-        self.future_ball_location_slice = 240
+        self.future_ball_location_slice = 180
 
         self.odd_tick = 0  # Use this for thing that can be run at 30 or 60 tps instead of 120
 
@@ -294,7 +294,7 @@ class VirxERLU(BaseAgent):
                         if self.show_coords:
                             self.debug[1].insert(0, str(self.me.location.int()))
 
-                        if not self.is_clear() and self.stack[0].__class__.__name__ in {'Aerial', 'jump_shot', 'block_ground_shot'}:
+                        if not self.is_clear() and self.stack[0].__class__.__name__ in {'Aerial', 'jump_shot', 'block_ground_shot', 'double_jump'}:
                             self.dbg_2d(round(self.stack[0].intercept_time - self.time, 4))
 
                         self.renderer.draw_string_2d(20, 300, 2, 2, "\n".join(self.debug[1]), self.renderer.team_color(alt_color=True))
@@ -309,7 +309,7 @@ class VirxERLU(BaseAgent):
                 if not self.is_clear():
                     self.stack[-1].run(self)
 
-                if self.is_clear() or self.stack[0].__class__.__name__ not in {'Aerial', 'jump_shot', 'block_ground_shot'}:
+                if self.is_clear() or self.stack[0].__class__.__name__ not in {'Aerial', 'jump_shot', 'block_ground_shot', 'double_jump'}:
                     self.shooting = False
                     self.shot_weight = -1
                     self.shot_time = -1
