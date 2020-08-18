@@ -1,4 +1,3 @@
-Shots now require 0.5 per 250 units on shots with a target, and removed the limit on shots without a target
 block_ground_shot will now flip towards the ball
 Smarter centers on offense
 A majority of the math required to find a shot is now done in C
@@ -23,3 +22,14 @@ In 2's, if VirxEB is either up down by 2, he will start to play more defensive
 More agressive in 1's (sometimes)
 More passive in 1's (sometimes)
 Neutral and Offensive playstyles try to keep the ball in the opponent's zone
+Linked ball_recovery to recovery
+VirxEB can now recover on the ceiling
+If VirxEB lands on the ceiling somehow, he can do a ceiling shot
+More pathfinding improvements
+Pathfinding tries to use less boost and more flips
+Jump shots now use flips in their pathfinding
+In 4's, 1 VirxEB will patiently wait to try a ceiling shot on the wall xD
+Backing checking now considers where the ball will be, instead of where the ball is
+Jump shot now auto-calculates the jump threshold
+In 2's, if VirxEB is ever down by 2 (or more), he will play more defensivly for the rest of the game
+Remove units per second requirement in favor of cap/cap_

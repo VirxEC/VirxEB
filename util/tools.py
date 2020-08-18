@@ -48,7 +48,7 @@ def find_jump_shot(agent, target, weight=None, cap_=6):
 
         # If we found a viable shot, pass the data into the shot routine and return the shot
         if shot['found'] == 1:
-            return jump_shot(Vector(*ball_location), intercept_time, Vector(*shot['best_shot_vector']), agent.best_shot_value, shot['direction'])
+            return jump_shot(Vector(*ball_location), intercept_time, Vector(*shot['best_shot_vector']), agent.best_shot_value)
 
 
 def find_any_jump_shot(agent, cap_=3):
@@ -81,7 +81,7 @@ def find_any_jump_shot(agent, cap_=3):
         shot = virxrlcu.parse_slice_for_jump_shot(time_remaining, agent.best_shot_value, ball_location, *me, cap_)
 
         if shot['found'] == 1:
-            return jump_shot(Vector(*ball_location), intercept_time, Vector(*shot['best_shot_vector']), agent.best_shot_value, shot['direction'])
+            return jump_shot(Vector(*ball_location), intercept_time, Vector(*shot['best_shot_vector']), agent.best_shot_value)
 
 
 def find_aerial(agent, target, weight=None, cap_=4):
@@ -89,8 +89,6 @@ def find_aerial(agent, target, weight=None, cap_=4):
 
     if slices is None:
         return
-
-    max_aerial_height = math.inf
 
     target = (
         target[0].tuple(),
@@ -108,8 +106,8 @@ def find_aerial(agent, target, weight=None, cap_=4):
 
     gravity = agent.gravity.tuple()
 
-    if len(agent.friends) == 0 and len(agent.foes) == 1:
-        max_aerial_height = 643
+    max_aerial_height = 643 if len(agent.friends) == 0 and len(agent.foes) == 1 else math.inf
+    min_aerial_height = 643 if max_aerial_height > 643 and agent.me.location.z >= 2044 - agent.me.hitbox.height * 1.1 else 275
 
     for ball_slice in slices:
         intercept_time = ball_slice.game_seconds
@@ -123,7 +121,7 @@ def find_aerial(agent, target, weight=None, cap_=4):
         if abs(ball_location[1]) > 5212:
             return
 
-        if 275 > ball_location[2] or ball_location[2] > max_aerial_height:
+        if min_aerial_height > ball_location[2] or ball_location[2] > max_aerial_height:
             continue
 
         shot = virxrlcu.parse_slice_for_aerial_shot_with_target(time_remaining, agent.best_shot_value, agent.boost_accel, gravity, ball_location, me, *target, cap_)
@@ -138,8 +136,6 @@ def find_any_aerial(agent, cap_=3):
     if slices is None:
         return
 
-    max_aerial_height = math.inf
-
     me = (
         agent.me.location.tuple(),
         agent.me.velocity.tuple(),
@@ -151,8 +147,8 @@ def find_any_aerial(agent, cap_=3):
 
     gravity = agent.gravity.tuple()
 
-    if len(agent.friends) == 0 and len(agent.foes) == 1:
-        max_aerial_height = 643
+    max_aerial_height = 643 if len(agent.friends) == 0 and len(agent.foes) == 1 else math.inf
+    min_aerial_height = 643 if max_aerial_height > 643 and agent.me.location.z >= 2044 - agent.me.hitbox.height * 1.1 else 275
 
     for ball_slice in slices:
         intercept_time = ball_slice.game_seconds
@@ -166,7 +162,7 @@ def find_any_aerial(agent, cap_=3):
         if abs(ball_location[1]) > 5212:
             return
 
-        if 275 > ball_location[2] or ball_location[2] > max_aerial_height:
+        if min_aerial_height > ball_location[2] or ball_location[2] > max_aerial_height:
             continue
 
         shot = virxrlcu.parse_slice_for_aerial_shot(time_remaining, agent.best_shot_value, agent.boost_accel, gravity, ball_location, me, cap_)
@@ -175,7 +171,7 @@ def find_any_aerial(agent, cap_=3):
             return Aerial(Vector(*shot['ball_intercept']), intercept_time)
 
 
-def get_slices(agent, cap_, weight=None):
+def get_slices(agent, cap_, weight=None, start_slice=12):
     # Get the struct
     struct = agent.predictions['ball_struct']
 
@@ -198,12 +194,12 @@ def get_slices(agent, cap_, weight=None):
 
         # Half the time, double the slices
         if time_remaining <= 3:
-            return struct.slices[12:end_slice]
+            return struct.slices[start_slice:end_slice]
 
-        return struct.slices[12:end_slice:2]
+        return struct.slices[start_slice:end_slice:2]
 
     # If we're not shooting, then cap the slices at the cap
     end_slice = math.ceil(cap_ * 60)
 
     # Start 0.2 seconds in, and skip every other data point
-    return struct.slices[12:end_slice:2]
+    return struct.slices[start_slice:end_slice:2]

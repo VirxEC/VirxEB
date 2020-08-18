@@ -15,6 +15,7 @@ from prediction import Prediction
 
 class Playstyle(Enum):
     Defensive = -1
+    Fancy = -0.5
     Neutral = 0
     Offensive = 1
 
@@ -39,6 +40,7 @@ class VirxERLU(BaseAgent):
             "team_to_ball": (),
             "self_from_goal": 0,
             "self_to_ball": 0,
+            "was_down": False,
             "done": False
         }
 
@@ -54,6 +56,7 @@ class VirxERLU(BaseAgent):
         self.show_coords = False
         self.debug_ball_path = False
         self.debug_ball_path_precision = 10
+        self.debug_vector = Vector()
 
         self.disable_driving = False
 
@@ -121,6 +124,8 @@ class VirxERLU(BaseAgent):
         self.shot_weight = -1
         self.shot_time = -1
 
+        self.future_ball_location_slice = 240
+
         self.odd_tick = 0  # Use this for thing that can be run at 30 or 60 tps instead of 120
 
     def retire(self):
@@ -169,7 +174,7 @@ class VirxERLU(BaseAgent):
 
         self.max_shot_weight = 4
 
-        self.best_shot_value = math.floor(92.75 + packet.game_cars[self.index].hitbox.width / 2)
+        self.best_shot_value = round((92.75 + min(self.me.hitbox) / 2) * 0.99, 4)
         self.print(f"Best shot value: {self.best_shot_value}")
 
         self.init()
@@ -184,6 +189,7 @@ class VirxERLU(BaseAgent):
         # Useful to keep separate from get_ready because humans can join/leave a match
         self.friends = tuple(car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team is self.team and i != self.index)
         self.foes = tuple(car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team != self.team)
+        self.me = car_object(self.index, packet)
 
         if len(self.friends) > 0 and self.match_comms is None:
             self.match_comms = MatchComms(self)
@@ -199,14 +205,13 @@ class VirxERLU(BaseAgent):
     def line(self, start, end, color=None):
         if self.debugging and self.debug_lines:
             color = color if color is not None else self.renderer.grey()
+            self.renderer.draw_line_3d(start.copy(), end.copy(), self.renderer.create_color(255, *color) if type(color) in {list, tuple} else color)
 
-            if isinstance(start, Vector):
-                start = start.copy().tuple()
-
-            if isinstance(end, Vector):
-                end = end.copy().tuple()
-
-            self.renderer.draw_line_3d(start, end, color if type(color) not in {list, tuple} else self.renderer.create_color(255, *color))
+    def polyline(self, vectors, color=None):
+        if self.debugging and self.debug_lines:
+            color = color if color is not None else self.renderer.grey()
+            vectors = tuple(vector.copy() for vector in vectors)
+            self.renderer.draw_polyline_3d(vectors, self.renderer.create_color(255, *color) if type(color) in {list, tuple} else color)
 
     def print(self, item):
         if not self.tournament:
@@ -295,16 +300,8 @@ class VirxERLU(BaseAgent):
                         self.renderer.draw_string_2d(20, 300, 2, 2, "\n".join(self.debug[1]), self.renderer.team_color(alt_color=True))
                         self.debug[1] = []
 
-                    if self.debug_ball_path:
-                        if self.predictions['ball_struct'] is not None:
-                            for i in range(0, self.predictions['ball_struct'].num_slices - (self.predictions['ball_struct'].num_slices % self.debug_ball_path_precision) - self.debug_ball_path_precision, self.debug_ball_path_precision):
-                                if self.predictions['ball_struct'].slices[i + self.debug_ball_path_precision].physics.location.y > 5212:
-                                    break
-
-                                self.line(
-                                    self.predictions['ball_struct'].slices[i].physics.location,
-                                    self.predictions['ball_struct'].slices[i + self.debug_ball_path_precision].physics.location
-                                )
+                    if self.debug_ball_path and self.predictions['ball_struct'] is not None:
+                        self.polyline(tuple(Vector(ball_slice.physics.location.x, ball_slice.physics.location.y, ball_slice.physics.location.z) for ball_slice in self.predictions['ball_struct'].slices[::self.debug_ball_path_precision]))
                 else:
                     self.debug = [[], []]
 
@@ -354,8 +351,15 @@ class car_object:
         self.doublejumped = False
         self.boost = 0
         self.index = index
+
         if packet is not None:
+            car = packet.game_cars[self.index]
+            self.hitbox = hitbox(car.hitbox.length, car.hitbox.width, car.hitbox.height)
+            self.offset = Vector(car.hitbox_offset.x, car.hitbox_offset.y, car.hitbox_offset.z)
             self.update(packet)
+        else:
+            self.hitbox = hitbox()
+            self.offset = Vector()
 
     def local(self, value):
         return self.orientation.dot(value)
@@ -387,6 +391,16 @@ class car_object:
     def up(self):
         # A vector pointing up relative to the cars orientation. Its magnitude == 1
         return self.orientation.up
+
+
+class hitbox:
+    def __init__(self, length=0, width=0, height=0):
+        self.length = length
+        self.width = width
+        self.height = height
+
+    def __getitem__(self, index):
+        return (self.length, self.width, self.height)[index]
 
 
 class ball_object:

@@ -3,10 +3,6 @@ from queue import Full
 from util.agent import math, Vector
 
 
-def almost_equals(x, y, threshold):
-    return x - threshold < y and y < x + threshold
-
-
 def backsolve(target, car, time, gravity):
     # Finds the acceleration required for a car to reach a target in a specific amount of time
     d = target - car.location
@@ -21,18 +17,17 @@ def cap(x, low, high):
     return max(min(x, high), low)
 
 
-def defaultPD(agent, local_target, direction=1.0):
+def defaultPD(agent, local_target, direction=1, upside_down=False):
     # points the car towards a given local target.
     # Direction can be changed to allow the car to steer towards a target while driving backwards
-    local_target *= direction
-    up = agent.me.local(Vector(z=1))  # where "up" is in local coordinates
+    up = agent.me.local(Vector(z=-1 if upside_down else 1))  # where "up" is in local coordinates
     target_angles = (
         math.atan2(local_target.z, local_target.x),  # angle required to pitch towards target
         math.atan2(local_target.y, local_target.x),  # angle required to yaw towards target
         math.atan2(up.y, up.z)  # angle required to roll upright
     )
     # Once we have the angles we need to rotate, we feed them into PD loops to determing the controller inputs
-    agent.controller.steer = steerPD(target_angles[1], 0) * direction
+    agent.controller.steer = steerPD(target_angles[1], 0)
     agent.controller.pitch = steerPD(target_angles[0], agent.me.angular_velocity.y/4)
     agent.controller.yaw = steerPD(target_angles[1], -agent.me.angular_velocity.z/4)
     agent.controller.roll = steerPD(target_angles[2], agent.me.angular_velocity.x/2)
@@ -40,12 +35,12 @@ def defaultPD(agent, local_target, direction=1.0):
     return target_angles
 
 
-def defaultThrottle(agent, target_speed, direction=1.0):
+def defaultThrottle(agent, target_speed, direction=1):
     # accelerates the car to a desired speed using throttle and boost
     car_speed = agent.me.local(agent.me.velocity).x
     t = (target_speed * direction) - car_speed
-    agent.controller.throttle = cap((t**2) * sign(t)/1000, -1.0, 1.0)
-    agent.controller.boost = t > 150 and car_speed < target_speed - (agent.boost_accel / 120) and agent.controller.throttle == 1
+    agent.controller.throttle = cap((t**2) * sign(t)/1000, -1, 1)
+    agent.controller.boost = t > 150 and car_speed < target_speed - (agent.boost_accel / 120) and agent.controller.throttle == 1 and (agent.me.airborne or abs(agent.controller.steer) < 0.1) and not agent.me.airborne
     return car_speed
 
 
@@ -67,7 +62,7 @@ def find_slope(shot_vector, car_to_target):
     # Finds the slope of your car's position relative to the shot vector (shot vector is y axis)
     # 10 = you are on the axis and the ball is between you and the direction to shoot in
     # -10 = you are on the wrong side
-    # 1.0 = you're about 45 degrees offcenter
+    # 1 = you're about 45 degrees offcenter
     d = shot_vector.dot(car_to_target)
     e = abs(shot_vector.cross(Vector(z=1)).dot(car_to_target))
     try:
@@ -147,7 +142,7 @@ def sign(x):
 
 def steerPD(angle, rate):
     # A Proportional-Derivative control loop used for defaultPD
-    return cap(((35*(angle+rate))**3)/10, -1.0, 1.0)
+    return cap(((35*(angle+rate))**3)/10, -1, 1)
 
 
 def lerp(a, b, t):
@@ -203,3 +198,67 @@ def peek_generator(generator):
         return next(generator)
     except StopIteration:
         return
+
+
+def almost_equals(x, y, threshold):
+    return x - threshold < y and y < x + threshold
+
+
+def point_inside_quadrilateral_2d(point, quadrilateral):
+    # Point is a 2d vector
+    # Quadrilateral is a tuple of 4 2d vectors, in either a clockwise or counter-clockwise order
+    # See https://stackoverflow.com/a/16260220/10930209 for an explaination
+
+    def area_of_triangle(triangle):
+        return abs(sum((triangle[0].x * (triangle[1].y - triangle[2].y), triangle[1].x * (triangle[2].y - triangle[0].y), triangle[2].x * (triangle[0].y - triangle[1].y))) / 2)
+
+    actual_area = area_of_triangle((quadrilateral[0], quadrilateral[1], point)) + area_of_triangle((quadrilateral[2], quadrilateral[1], point)) + area_of_triangle((quadrilateral[2], quadrilateral[3], point)) + area_of_triangle((quadrilateral[0], quadrilateral[3], point))
+    quadrilateral_area = area_of_triangle((quadrilateral[0], quadrilateral[2], quadrilateral[1])) + area_of_triangle((quadrilateral[0], quadrilateral[2], quadrilateral[3]))
+
+    # This is to account for any floating point errors
+    return almost_equals(actual_area, quadrilateral_area, 0.001)
+
+
+def valid_ceiling_shot(agent, cap_=5):
+    struct = agent.predictions['ball_struct']
+
+    if struct is None:
+        return
+
+    end_slice = math.ceil(cap_ * 60)
+    slices = struct.slices[120:end_slice:2]
+
+    if agent.me.location.x * side(agent.team) > 0:
+        quadrilateral = (
+            agent.foe_goal.right_post.flatten().int(),
+            agent.foe_goal.left_post.flatten().int()
+        )
+    else:
+        quadrilateral = (
+            agent.foe_goal.left_post.flatten().int(),
+            agent.foe_goal.right_post.flatten().int()
+        )
+
+    quadrilateral += (
+        Vector(0, 640),
+        Vector(agent.me.location.x - (200 * sign(agent.me.location.x)), agent.me.location.y - (200 * side(agent.team))).int(),
+    )
+
+    agent.polyline(quadrilateral + (quadrilateral[0],), agent.renderer.team_color(alt_color=True))
+
+    for ball_slice in slices:
+        intercept_time = ball_slice.game_seconds
+        time_remaining = intercept_time - agent.time
+
+        if time_remaining <= 0:
+            return
+
+        ball_location = Vector(ball_slice.physics.location.x, ball_slice.physics.location.y, ball_slice.physics.location.z)
+
+        if ball_location.z < 642:
+            continue
+
+        if not point_inside_quadrilateral_2d(ball_location.flatten().int(), quadrilateral):
+            continue
+
+        return ball_location

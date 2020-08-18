@@ -51,6 +51,8 @@ class Prediction(Thread):
 
                 self.agent.predictions['self_from_goal'] = self.agent.friend_goal.location.flat_dist(self.agent.me.location) if not self.agent.me.demolished else math.inf
                 self.agent.predictions['self_to_ball'] = self.agent.ball.location.flat_dist(self.agent.me.location) if not self.agent.me.demolished else math.inf
+                if not self.agent.predictions['was_down']:
+                    self.agent.predictions['was_down'] = self.agent.game.friend_score - self.agent.game.foe_score > 1
 
                 if self.agent.goalie:
                     self.agent.playstyle = self.agent.playstyles.Defensive
@@ -70,18 +72,19 @@ class Prediction(Thread):
                     if ball_loc_y < 2560:
                         # If we're down or up by 2 goals in 2's, then start playing more defensive
                         if ball_loc_y < -1280 and self.agent.predictions['self_to_ball'] == min(self.agent.predictions['team_to_ball']) and self.agent.predictions['self_from_goal'] != min(self.agent.predictions["team_from_goal"]):
-                            self.agent.playstyle = self.agent.playstyles.Offensive if len_friends > 1 or (len_friends == 1 and abs(self.agent.game.friend_score - self.agent.game.foe_score) <= 1) else self.agent.playstyles.Neutral
+                            self.agent.playstyle = self.agent.playstyles.Offensive if len_friends > 1 or (len_friends == 1 and (self.agent.predictions['was_down'] or abs(self.agent.game.friend_score - self.agent.game.foe_score) <= 1)) else self.agent.playstyles.Neutral
                         elif self.agent.predictions['self_from_goal'] == min(self.agent.predictions["team_from_goal"]):
-                            self.agent.playstyle = self.agent.playstyles.Defensive if len_friends > 1 or (len_friends == 1 and abs(self.agent.game.friend_score - self.agent.game.foe_score) > 1) else self.agent.playstyles.Neutral
+                            self.agent.playstyle = self.agent.playstyles.Defensive if len_friends > 1 or (len_friends == 1 and (self.agent.predictions['was_down'] or abs(self.agent.game.friend_score - self.agent.game.foe_score) > 1)) else self.agent.playstyles.Neutral
                         else:
-                            self.agent.playstyle = self.agent.playstyles.Neutral
+                            tm8s = sorted(self.agent.predictions["team_from_goal"])
+                            self.agent.playstyle = self.agent.playstyles.Fancy if len_friends >= 3 and self.agent.ball.location.y * side < -640 and self.agent.predictions['self_from_goal'] not in {tm8s[0], tm8s[1], tm8s[-1]} else self.agent.playstyles.Neutral
                     else:
                         self.agent.playstyle = self.agent.playstyles.Defensive
                 else:
                     self.agent.playstyle = self.agent.playstyles.Neutral if self.agent.ball.location.y * side < 1280 else self.agent.playstyles.Defensive
 
                 if not can_shoot:
-                    self.can_shoot = self.agent.time - 2.95
+                    self.agent.can_shoot = self.agent.time - 2.95
 
                 if self.agent.odd_tick == 0:
                     is_own_goal = False
