@@ -39,3 +39,6 @@ Properly capped shots without a target at 3 seconds
 Fixed backwards jump shots
 Backwards jump shots no longer have to be within 1/2 the cap/cap_
 Bots can now boost in the air via default_throttle
+If the ball is getting closer to the net and the bot is behind the ball, it will treat it like the ball is about to go into the net
+Cleaned up the code a little bit
+Better offensive checks

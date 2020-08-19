@@ -104,7 +104,6 @@ class VirxEB(VirxERLU):
             if self.can_shoot is not None and (self.time - self.can_shoot >= 3 or self.predictions['own_goal']):
                 self.can_shoot = None
 
-            # :D
             if side(self.team) * self.ball.location.y >= self.panic_switch[self.playstyle] or self.predictions['own_goal']:
                 for shots in (self.defensive_shots, self.panic_shots):
                     for shot in shots:
@@ -126,10 +125,12 @@ class VirxEB(VirxERLU):
                     if len(team_to_ball) == 1 or team_to_ball[math.ceil(len(team_to_ball) / 2)] + 10 > self_to_ball:
                         self.can_shoot = None
 
+                    fake_own_goal = self.last_ball_location.dist(self.friend_goal.location) > self.ball.location.dist(self.friend_goal.location)
+
                     # What is 175?
                     # 175 is the radius of the ball rounded up (93) plus the half the length of the longest car rounded up (breakout; 66) with an extra 10% then rounded up
                     # Basicly it's the 'is an enemy dribbling the ball' detector
-                    if self_loc.y > ball_loc.y and self.predictions['closest_enemy'] <= 175 and (self.predictions['own_goal'] or (len(self.friends) > 0 and min(self.predictions['team_from_goal'])) < self.predictions['self_from_goal']):
+                    if self_loc.y > ball_loc.y and self.predictions['closest_enemy'] <= 175 and (fake_own_goal or self.predictions['own_goal'] or (len(self.friends) > 0 and min(self.predictions['team_from_goal'])) < self.predictions['self_from_goal']):
                         bgs = block_ground_shot()
                         if bgs.is_viable(self):
                             self.clear()
@@ -141,7 +142,7 @@ class VirxEB(VirxERLU):
                     if self_loc.y > ball_loc.y + 50 and ((ball_loc.x > 0 and ball_loc.x < max_panic_x_ball_loc and self.smart_shot(self.panic_shots[0], cap=2)) or (ball_loc.x < 0 and ball_loc.x > -max_panic_x_ball_loc and self.smart_shot(self.panic_shots[1], cap=2))):
                         return
 
-                    if self.predictions['own_goal'] or (len(team_to_ball) > 1 and team_to_ball[math.ceil(len(team_to_ball) / 2)] + 10 > self_to_ball) or (len(team_to_ball) == 1 and self_to_ball < 2560) or (abs(ball_loc.x) < 900 and ball_loc.y > 1280):
+                    if fake_own_goal or self.predictions['own_goal'] or (len(team_to_ball) > 1 and team_to_ball[math.ceil(len(team_to_ball) / 2)] + 10 > self_to_ball) or (len(team_to_ball) == 1 and self_to_ball < 2560) or (abs(ball_loc.x) < 900 and ball_loc.y > 1280):
                         if ball_loc.y < 1280:
                             for shot in self.defensive_shots:
                                 if self.smart_shot(shot, cap=2):
@@ -150,7 +151,7 @@ class VirxEB(VirxERLU):
                         if self_loc.y > ball_loc.y and team_to_ball[0] is self_to_ball and self.smart_shot(weight=self.max_shot_weight - 1, cap=2):
                             return
 
-                        if self.predictions['own_goal'] and abs(self_loc.x) < abs(ball_loc.x) - 100 and self_loc.y < ball_loc.y - 50:
+                        if (fake_own_goal or self.predictions['own_goal']) and abs(self_loc.x) < abs(ball_loc.x) - 100 and self_loc.y < ball_loc.y - 50:
                             bgs = block_ground_shot()
                             if bgs.is_viable(self):
                                 self.clear()

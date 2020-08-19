@@ -26,6 +26,20 @@ class VirxERLU(BaseAgent):
         self.tournament = False
         self.startup_time = time_ns()
 
+        self.debug = [[], []]
+        self.debugging = not self.tournament
+        self.debug_lines = True
+        self.debug_3d_bool = True
+        self.debug_stack_bool = True
+        self.debug_2d_bool = False
+        self.show_coords = False
+        self.debug_ball_path = False
+        self.debug_ball_path_precision = 10
+        self.debug_vector = Vector()
+        self.disable_driving = False
+        self.goalie = False
+        self.air_bud = False
+
         if not self.tournament:
             self.gui = Gui(self)
             self.print("Starting the GUI...")
@@ -44,26 +58,9 @@ class VirxERLU(BaseAgent):
             "done": False
         }
 
-        self.goalie = False
-        self.air_bud = False
-
-        self.debug = [[], []]
-        self.debugging = not self.tournament
-        self.debug_lines = True
-        self.debug_3d_bool = True
-        self.debug_stack_bool = True
-        self.debug_2d_bool = False
-        self.show_coords = False
-        self.debug_ball_path = False
-        self.debug_ball_path_precision = 10
-        self.debug_vector = Vector()
-
-        self.disable_driving = False
-
         self.prediction = Prediction(self)
         self.print("Starting the predictive service...")
         self.prediction.start()
-
         self.match_comms = None
 
         self.print("Building game information")
@@ -111,22 +108,16 @@ class VirxERLU(BaseAgent):
 
         self.kickoff_flag = False
         self.kickoff_done = True
-
-        self.last_time = 0
-        self.my_score = 0
-        self.foe_score = 0
+        self.shooting = False
+        self.odd_tick = 0
 
         self.playstyles = Playstyle
         self.playstyle = self.playstyles.Neutral
-
         self.can_shoot = None
-        self.shooting = False
         self.shot_weight = -1
         self.shot_time = -1
-
         self.future_ball_location_slice = 180
-
-        self.odd_tick = 0  # Use this for thing that can be run at 30 or 60 tps instead of 120
+        self.last_ball_location = Vector(z=93)
 
     def retire(self):
         # Stop the currently running threads
@@ -362,7 +353,25 @@ class car_object:
             self.offset = Vector()
 
     def local(self, value):
+        # Generic localization
         return self.orientation.dot(value)
+
+    def local_velocity(self, value=None):
+        # Returns the velocity of an item relative to the car
+        # x is the velocity forwards (+) or backwards (-)
+        # y is the velocity to the left (-) or right (+)
+        # z if the velocity upwards (+) or downwards (-)
+        if value is None:
+            value = self.velocity
+
+        return self.orientation.dot(value)
+
+    def local_location(self, location):
+        # Returns the location of an item relative to the car
+        # x is how far the location is forwards (+) or backwards (-)
+        # y is how far the location is to the left (-) or right (+)
+        # z is how far the location is upwards (+) or downwards (-)
+        return self.orientation.dot(location - self.location)
 
     def update(self, packet):
         car = packet.game_cars[self.index]
