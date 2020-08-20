@@ -393,7 +393,7 @@ class goto:
             agent.push(recovery(self.target))
 
 
-class dynamic_backcheck:
+class shadow:
     def __init__(self):
         self.start_time = None
         self.goto = goto(Vector(), brake=True)
@@ -443,7 +443,7 @@ class retreat:
 
         if ball.y * side(agent.team) < 2560 and agent.playstyle is not agent.playstyles.Defensive:
             agent.pop()
-            agent.push(dynamic_backcheck())
+            agent.push(shadow())
             return
 
         target = self.get_target(agent)

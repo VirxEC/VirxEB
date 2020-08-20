@@ -6,7 +6,7 @@ from rlbot.utils.structures.quick_chats import QuickChats
 from util.agent import Vector, VirxERLU, math
 from util.replays import back_kickoff
 from util.routines import (ball_recovery, block_ground_shot, ceiling_shot,
-                           corner_kickoff, dynamic_backcheck, generic_kickoff,
+                           corner_kickoff, shadow, generic_kickoff,
                            goto_boost, retreat, short_shot)
 from util.tools import (find_aerial, find_any_aerial, find_any_double_jump,
                         find_any_jump_shot, find_double_jump, find_jump_shot)
@@ -545,7 +545,7 @@ class VirxEB(VirxERLU):
                 if clear_on_valid:
                     self.clear()
 
-                self.push(dynamic_backcheck())
+                self.push(shadow())
                 return True
 
             routine_retreat = retreat()
