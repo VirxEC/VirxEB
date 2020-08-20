@@ -475,7 +475,7 @@ class game_object:
 
 
 class Matrix3:
-    # The Matrix3's sole purpose is to convert roll, pitch, and yaw data from the gametickpaket into an orientation matrix
+    # The Matrix3's sole purpose is to convert roll, pitch, and yaw data from the gametickpacket into an orientation matrix
     # An orientation matrix contains 3 Vector's
     # Matrix3[0] is the "forward" direction of a given car
     # Matrix3[1] is the "left" direction of a given car
@@ -508,7 +508,7 @@ class Matrix3:
 # With this new setup, Vector supports 1D, 2D and 3D Vectors, as well as calculations between them
 @dataclass
 class Vector:
-    # These values can be ints or floats, with thier defaults being 0
+    # These values can be ints or floats, with their defaults being 0
     # This means that Vector3(0, 0, 0) is now Vector()
     x: float = 0
     y: float = 0
@@ -573,7 +573,7 @@ class Vector:
     def list(self) -> List[float]:
         return [self.x, self.y, self.z]
 
-    # Linear alegra functions
+    # Linear algebra functions
 
     def magnitude(self) -> float:
         # Magnitude() returns the length of the vector

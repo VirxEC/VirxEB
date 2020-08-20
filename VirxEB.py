@@ -132,7 +132,7 @@ class VirxEB(VirxERLU):
 
                     # What is 175?
                     # 175 is the radius of the ball rounded up (93) plus the half the length of the longest car rounded up (breakout; 66) with an extra 10% then rounded up
-                    # Basicly it's the 'is an enemy dribbling the ball' detector
+                    # Basically it's the 'is an enemy dribbling the ball' detector
                     if self_loc.y > ball_loc.y and self.predictions['closest_enemy'] <= 175 and (fake_own_goal or self.predictions['own_goal'] or (len(self.friends) > 0 and min(self.predictions['team_from_goal'])) < self.predictions['self_from_goal']):
                         bgs = block_ground_shot()
                         if bgs.is_viable(self):

@@ -67,7 +67,7 @@ def find_slope(shot_vector, car_to_target):
 def post_correction(ball_location, left_target, right_target):
     # this function returns target locations that are corrected to account for the ball's radius
     # If the left and right post swap sides, a goal cannot be scored
-    # We purposly make this a bit larger so that our shots have a higher chance of success
+    # We purposely make this a bit larger so that our shots have a higher chance of success
     ball_radius = 120
     goal_line_perp = (right_target - left_target).cross(Vector(z=1))
     left = left_target + ((left_target - ball_location).normalize().cross(Vector(z=-1))*ball_radius)
@@ -199,7 +199,7 @@ def almost_equals(x, y, threshold):
 def point_inside_quadrilateral_2d(point, quadrilateral):
     # Point is a 2d vector
     # Quadrilateral is a tuple of 4 2d vectors, in either a clockwise or counter-clockwise order
-    # See https://stackoverflow.com/a/16260220/10930209 for an explaination
+    # See https://stackoverflow.com/a/16260220/10930209 for an explanation
 
     def area_of_triangle(triangle):
         return abs(sum((triangle[0].x * (triangle[1].y - triangle[2].y), triangle[1].x * (triangle[2].y - triangle[0].y), triangle[2].x * (triangle[0].y - triangle[1].y))) / 2)

@@ -84,12 +84,12 @@ class double_jump:
         self.counter = 0
 
     def run(self, agent):
-        # This routine is the same as jump_shot, but it's designed to hit the ball above 250uu's (and below 551uu's or so) without any boost
+        # This routine is the same as jump_shot, but it's designed to hit the ball above 250uus (and below 551uus or so) without any boost
         if not agent.shooting:
             agent.shooting = True
 
         if self.debug_start:
-            agent.print(f"Hit ball via double jump {round(agent.me.location.dist(self.dodge_point), 4)}uu's away in {round(self.intercept_time - agent.time, 4)}s")
+            agent.print(f"Hit ball via double jump {round(agent.me.location.dist(self.dodge_point), 4)}uus away in {round(self.intercept_time - agent.time, 4)}s")
             self.debug_start = False
 
         raw_time_remaining = self.intercept_time - agent.time
@@ -204,7 +204,7 @@ class Aerial:
         if self.time == -1:
             elapsed = 0
             self.time = agent.time
-            agent.print(f"Hit ball via aerial {round(agent.me.location.dist(self.target), 4)}uu's away in {round(self.intercept_time - self.time, 4)}s")
+            agent.print(f"Hit ball via aerial {round(agent.me.location.dist(self.target), 4)}uus away in {round(self.intercept_time - self.time, 4)}s")
         else:
             elapsed = agent.time - self.time
 
@@ -409,6 +409,7 @@ class shadow:
 
         if agent.time - self.start_time > 0.5 or agent.playstyle is agent.playstyles.Defensive or ball_loc.y > 2560:
             agent.pop()
+            agent.push(retreat())
             return
 
         distance = 1280 if len(agent.friends) >= 2 or agent.playstyle is agent.playstyles.Offensive else 2560
@@ -516,11 +517,13 @@ class goto_boost:
         self.goto = goto(self.boost.location)
 
     def run(self, agent):
+        if not self.boost.large:
+            self.goto.vector = agent.ball.location
+
         if self.start_time is None:
             self.start_time = agent.time
-            if not self.boost.large:
-                self.goto.vector = agent.ball.location
-        elif agent.time - self.start_time > 2:
+
+        if agent.time - self.start_time > 2 or not self.boost.active:
             agent.pop()
         else:
             self.goto.run(agent)
@@ -840,7 +843,7 @@ class block_ground_shot:
         if self.ball_location is None:
             return False
 
-        agent.print(f"Block ground shot {round(self.ball_location.dist(agent.me.location), 4)}uu's away in {round(self.intercept_time - agent.time, 4)}s (Direction: {self.direction})")
+        agent.print(f"Block ground shot {round(self.ball_location.dist(agent.me.location), 4)}uus away in {round(self.intercept_time - agent.time, 4)}s (Direction: {self.direction})")
         return True
 
     def get_intercept(self, agent):
