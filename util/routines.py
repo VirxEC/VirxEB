@@ -38,7 +38,7 @@ class atba:
             agent.pop()
             if self.exit_flip:
                 agent.push(flip(local_target))
-        elif abs(angles[1]) < 0.05 and velocity > 600 and velocity < 2150 and distance_remaining / velocity > 2.0:
+        elif abs(angles[1]) < 0.05 and velocity > 600 and velocity < 2150 and distance_remaining / velocity > 2:
             agent.push(flip(local_target))
         elif abs(angles[1]) > 2.8 and velocity < 200:
             agent.push(flip(local_target, True))
@@ -94,10 +94,10 @@ class double_jump:
 
         raw_time_remaining = self.intercept_time - agent.time
         # Capping raw_time_remaining above 0 to prevent division problems
-        time_remaining = cap(raw_time_remaining, 0.001, 10.0)
+        time_remaining = cap(raw_time_remaining, 0.001, 10)
         car_to_ball = self.ball_location - agent.me.location
         # whether we should go forwards or backwards
-        angle_to_target = abs(Vector(x=1).angle(agent.me.local_location(self.dodge_point)))
+        angle_to_target = abs(Vector(x=1).angle2D(agent.me.local_location(self.dodge_point)))
         direction = 1 if angle_to_target < 2.2 else -1
         # whether we are to the left or right of the shot vector
         side_of_shot = sign(self.shot_vector.cross(Vector(z=1)).dot(car_to_ball))
@@ -107,12 +107,12 @@ class double_jump:
         distance_remaining = car_to_dodge_point.magnitude()
 
         speed_required = distance_remaining / time_remaining
-        acceleration_required = backsolve(self.dodge_point, agent.me, time_remaining, 0 if not self.jumping else agent.gravity.z)
+        acceleration_required = backsolve(self.dodge_point, agent.me, time_remaining, Vector() if not self.jumping else agent.gravity)
         local_acceleration_required = agent.me.local(acceleration_required)
 
         # The adjustment causes the car to circle around the dodge point in an effort to line up with the shot vector
         # The adjustment slowly decreases to 0 as the bot nears the time to jump
-        adjustment = car_to_dodge_point.angle(self.shot_vector) * distance_remaining / 2.0  # size of adjustment
+        adjustment = car_to_dodge_point.angle2D(self.shot_vector) * distance_remaining / 2  # size of adjustment
         # controls how soon car will jump based on acceleration required
         # bigger == later and smaller == sooner
         # Max 584, min 1
@@ -138,8 +138,8 @@ class double_jump:
         agent.line(final_target-Vector(z=100), final_target+Vector(z=100), agent.renderer.green())
 
         if not self.jumping:
-            defaultPD(agent, local_final_target, direction)
-            defaultThrottle(agent, speed_required, direction)
+            defaultPD(agent, local_final_target)
+            defaultThrottle(agent, speed_required * direction)
             agent.controller.handbrake = (angle_to_target >= 2.3 or (agent.me.local_velocity().x >= 900 and angle_to_target > 1.57)) and direction == 1
 
             velocity = 1+agent.me.velocity.magnitude()
@@ -177,17 +177,14 @@ class double_jump:
                     agent.controller.jump = True
             elif self.counter < 3:
                 # make sure we aren't jumping for at least 3 frames - in this time, we can start to adjust ourself, if it's needed
-                if self.dodge_point.z > 400:
-                    defaultPD(agent, agent.me.local_location(self.dodge_point))
-                    agent.controller.roll = 1 * sign(agent.controller.roll)
+                defaultPD(agent, agent.me.local_location(self.dodge_point))
                 self.counter += 1
-            elif jump_elapsed < 0.3 and not self.dodged:
+            elif jump_elapsed < 0.3 and not self.dodged and local_acceleration_required.z > 0:
                 agent.controller.jump = True
                 self.dodged = True
-            elif jump_elapsed >= 0.3 or self.dodged:
-                if self.dodge_point.z > 400:
-                    defaultPD(agent, agent.me.local_location(self.dodge_point), upside_down=True)
-                agent.controller.boost = abs(Vector(x=1).angle3D(agent.me.local(car_to_ball))) < 0.1 and agent.me.local_velocity().x < 2300 - (agent.boost_accel / 120)
+            elif jump_elapsed >= 0.3 or self.dodged or local_acceleration_required.z < 0:
+                defaultPD(agent, agent.me.local_location(self.dodge_point), upside_down=True)
+                agent.controller.boost = abs(Vector(x=1).angle(agent.me.local(car_to_ball))) < 0.1 and agent.me.local_velocity().x < 2300 - (agent.boost_accel / 120)
 
 
 class Aerial:
@@ -255,7 +252,7 @@ class Aerial:
         if not (jump_max_duration <= elapsed and elapsed < 0.3 and self.counter == 3):
             defaultPD(agent, agent.me.local(delta_x if delta_x.magnitude() > 50 else (self.target - agent.me.location)), upside_down=self.ceiling)
 
-        if agent.me.forward.angle3D(direction) < 0.3:
+        if agent.me.forward.angle(direction) < 0.3:
             if delta_x.magnitude() > 50:
                 agent.controller.boost = 1
             else:
@@ -345,7 +342,7 @@ class goto:
     def run(self, agent, manual=False):
         car_to_target = self.target - agent.me.location
         distance_remaining = car_to_target.flatten().magnitude()
-        angle_to_target = abs(Vector(x=1).angle(agent.me.local(car_to_target)))
+        angle_to_target = abs(Vector(x=1).angle2D(agent.me.local(car_to_target)))
         direction = 1 if angle_to_target < 2.2 else -1
 
         agent.dbg_2d(f"Angle to target: {angle_to_target}")
@@ -364,7 +361,7 @@ class goto:
             # See comments for adjustment in jump_shot for explanation
             side_of_vector = sign(self.vector.cross(Vector(z=1)).dot(car_to_target))
             car_to_target_perp = car_to_target.cross(Vector(z=side_of_vector)).normalize()
-            adjustment = car_to_target.angle(self.vector) * distance_remaining / 3.14
+            adjustment = car_to_target.angle2D(self.vector) * distance_remaining / 3.14
             final_target = self.target + (car_to_target_perp * adjustment)
         else:
             final_target = self.target
@@ -375,9 +372,9 @@ class goto:
 
         local_target = agent.me.local_location(final_target)
 
-        defaultPD(agent, local_target, direction)
+        defaultPD(agent, local_target)
         target_speed = 2300 if distance_remaining > 1280 else 1400
-        defaultThrottle(agent, target_speed, direction)
+        defaultThrottle(agent, target_speed * direction)
 
         if len(agent.friends) > 0 and agent.me.local_velocity().x < 10 and agent.controller.throttle == 1 and min(agent.me.location.flat_dist(car.location) for car in agent.friends) < 251:
             agent.push(flip(Vector(y=250)))
@@ -455,7 +452,7 @@ class retreat:
         if target.flat_dist(agent.me.location) < 350:
             if agent.me.velocity.magnitude() > 100:
                 self.brake.run(agent)
-            elif abs(Vector(x=1).angle(agent.me.local_location(ball))) > 0.25:
+            elif abs(Vector(x=1).angle2D(agent.me.local_location(ball))) > 0.25:
                 agent.pop()
                 agent.push(face_target(ball=True))
             else:
@@ -546,10 +543,10 @@ class jump_shot:
         agent.shooting = True
         raw_time_remaining = self.intercept_time - agent.time
         # Capping raw_time_remaining above 0 to prevent division problems
-        time_remaining = cap(raw_time_remaining, 0.001, 10.0)
+        time_remaining = cap(raw_time_remaining, 0.001, 10)
         car_to_ball = self.ball_location - agent.me.location
         # whether we should go forwards or backwards
-        angle_to_target = abs(Vector(x=1).angle(agent.me.local(car_to_ball)))
+        angle_to_target = abs(Vector(x=1).angle2D(agent.me.local(car_to_ball)))
         direction = 1 if angle_to_target < 2.2 else -1
         # whether we are to the left or right of the shot vector
         side_of_shot = sign(self.shot_vector.cross(Vector(z=1)).dot(car_to_ball))
@@ -559,18 +556,18 @@ class jump_shot:
         distance_remaining = car_to_dodge_point.magnitude()
 
         speed_required = distance_remaining / time_remaining
-        acceleration_required = backsolve(self.dodge_point, agent.me, time_remaining, 0 if not self.jumping else agent.gravity.z)
+        acceleration_required = backsolve(self.dodge_point, agent.me, time_remaining, Vector() if not self.jumping else agent.gravity)
         local_acceleration_required = agent.me.local(acceleration_required)
 
         # The adjustment causes the car to circle around the dodge point in an effort to line up with the shot vector
         # The adjustment slowly decreases to 0 as the bot nears the time to jump
-        adjustment = car_to_dodge_point.angle(self.shot_vector) * distance_remaining / 2.0  # size of adjustment
+        adjustment = car_to_dodge_point.angle2D(self.shot_vector) * distance_remaining / 2  # size of adjustment
         # controls how soon car will jump based on acceleration required
         # If we're angled off really far from the dodge point, then we'll delay the jump in an effort to get a more accurate shot
         # If we're dead on with the shot (ex 0.25 radians off) then we'll jump a lot sooner
         # any number larger than 0 works for the minimum
         # 584 is the highest you can go, for the maximum
-        jump_threshold = cap(abs(Vector(x=1).angle(agent.me.local_location(self.dodge_point))) * 400, 100, 500)
+        jump_threshold = cap(abs(Vector(x=1).angle2D(agent.me.local_location(self.dodge_point))) * 400, 100, 500)
         # factoring in how close to jump we are
         adjustment *= (cap(jump_threshold - (acceleration_required.z), 0, jump_threshold) / jump_threshold)
         # we don't adjust the final target if we are already jumping
@@ -589,8 +586,8 @@ class jump_shot:
         agent.line(final_target-Vector(z=100), final_target+Vector(z=100), agent.renderer.green())
 
         if not self.jumping:
-            defaultPD(agent, local_final_target, direction)
-            defaultThrottle(agent, speed_required, direction)
+            defaultPD(agent, local_final_target)
+            defaultThrottle(agent, speed_required * direction)
 
             agent.controller.handbrake = (angle_to_target >= 2.3 or (agent.me.local_velocity().x >= 900 and angle_to_target > 1.57)) and direction == 1
 
@@ -830,10 +827,10 @@ class block_ground_shot:
                 return
 
             agent.line(self.ball_location.flatten(), self.ball_location.flatten() + Vector(z=250), color=[255, 0, 255])
-            angles = defaultPD(agent, agent.me.local_location(self.ball_location), self.direction)
+            angles = defaultPD(agent, agent.me.local_location(self.ball_location))
             # We want to get there before the ball does, so take the time we have and get 3 fifths of it
             required_speed = cap(agent.me.location.dist(self.ball_location) / ((self.intercept_time - agent.time) * (3/5)), 600, 2275)
-            defaultThrottle(agent, required_speed, self.direction)
+            defaultThrottle(agent, required_speed * self.direction)
 
             agent.controller.boost = False if abs(angles[1]) > 0.3 else agent.controller.boost
             agent.controller.handbrake = True if abs(angles[1]) >= 2.3 or (agent.me.local_velocity().x >= 900 and abs(angles[1]) > 1.57) and self.direction == 1 else False
@@ -871,7 +868,7 @@ class block_ground_shot:
             car_to_ball = ball_location - agent.me.location
             direction, distance = car_to_ball.normalize(True)
 
-            forward_angle = direction.angle(agent.me.forward)
+            forward_angle = direction.angle2D(agent.me.forward)
             backward_angle = math.pi - forward_angle
 
             forward_time = time_remaining - (forward_angle * 0.318)
@@ -948,11 +945,11 @@ class ceiling_shot:
                 agent.pop()
             elif agent.me.location.dist(self.wait_target) > 150:
                 local_target = agent.me.local_location(self.wait_target)
-                angle_to_target = abs(Vector(x=1).angle(local_target))
+                angle_to_target = abs(Vector(x=1).angle2D(local_target))
                 direction = -1 if agent.me.location.z > 100 and angle_to_target >= 2.2 else 1
 
-                defaultPD(agent, local_target, direction)
-                defaultThrottle(agent, 1400, direction)
+                defaultPD(agent, local_target)
+                defaultThrottle(agent, 1400 * direction)
                 agent.controller.boost = False
                 agent.controller.handbrake = (angle_to_target >= 2.3 or (agent.me.local_velocity().x >= 900 and angle_to_target > 1.57)) and direction == 1
             elif agent.odd_tick % 2 == 0:
@@ -968,7 +965,7 @@ class ceiling_shot:
                 self.falling = True
             else:
                 local_target = agent.me.local_location(self.target_location)
-                angle_to_target = abs(Vector(x=1).angle(local_target))
+                angle_to_target = abs(Vector(x=1).angle2D(local_target))
 
                 defaultPD(agent, local_target)
                 defaultThrottle(agent, 2300 if self.target_location.dist(agent.me.location) > 2560 else 1400)

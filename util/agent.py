@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import itertools
 import math
 from time import time_ns
 from dataclasses import dataclass
 from enum import Enum
 from traceback import print_exc
-from typing import SupportsFloat
+from typing import List, Tuple
 
 from rlbot.agents.base_agent import BaseAgent, SimpleControllerState
 
@@ -345,33 +347,33 @@ class car_object:
 
         if packet is not None:
             car = packet.game_cars[self.index]
-            self.hitbox = hitbox(car.hitbox.length, car.hitbox.width, car.hitbox.height)
+            self.hitbox = hitbox_object(car.hitbox.length, car.hitbox.width, car.hitbox.height)
             self.offset = Vector(car.hitbox_offset.x, car.hitbox_offset.y, car.hitbox_offset.z)
             self.update(packet)
         else:
-            self.hitbox = hitbox()
+            self.hitbox = hitbox_object()
             self.offset = Vector()
 
     def local(self, value):
         # Generic localization
         return self.orientation.dot(value)
 
-    def local_velocity(self, value=None):
+    def local_velocity(self, velocity=None):
         # Returns the velocity of an item relative to the car
         # x is the velocity forwards (+) or backwards (-)
         # y is the velocity to the left (-) or right (+)
         # z if the velocity upwards (+) or downwards (-)
-        if value is None:
-            value = self.velocity
+        if velocity is None:
+            velocity = self.velocity
 
-        return self.orientation.dot(value)
+        return self.local(velocity)
 
     def local_location(self, location):
         # Returns the location of an item relative to the car
         # x is how far the location is forwards (+) or backwards (-)
         # y is how far the location is to the left (-) or right (+)
         # z is how far the location is upwards (+) or downwards (-)
-        return self.orientation.dot(location - self.location)
+        return self.local(location - self.location)
 
     def update(self, packet):
         car = packet.game_cars[self.index]
@@ -402,7 +404,7 @@ class car_object:
         return self.orientation.up
 
 
-class hitbox:
+class hitbox_object:
     def __init__(self, length=0, width=0, height=0):
         self.length = length
         self.width = width
@@ -508,9 +510,9 @@ class Matrix3:
 class Vector:
     # These values can be ints or floats, with thier defaults being 0
     # This means that Vector3(0, 0, 0) is now Vector()
-    x: SupportsFloat = 0
-    y: SupportsFloat = 0
-    z: SupportsFloat = 0
+    x: float = 0
+    y: float = 0
+    z: float = 0
 
     def __eq__(self, value):
         # Vector's can be compared with:
@@ -562,23 +564,23 @@ class Vector:
         return Vector(self.x/value, self.y/value, self.z/value)
     __rtruediv__ = __truediv__
 
-    def int(self):
+    def int(self) -> Vector:
         return Vector(int(self.x), int(self.y), int(self.z))
 
-    def tuple(self):
+    def tuple(self) -> Tuple[float]:
         return (self.x, self.y, self.z)
 
-    def list(self):
+    def list(self) -> List[float]:
         return [self.x, self.y, self.z]
 
     # Linear alegra functions
 
-    def magnitude(self):
+    def magnitude(self) -> float:
         # Magnitude() returns the length of the vector
         return math.sqrt(self.dot(self))
 
-    def normalize(self, return_magnitude=False):
-        # Normalize() returns a Vector that shares the same direction but has a length of 1.0
+    def normalize(self, return_magnitude=False) -> List[Vector, float] or Vector:
+        # Normalize() returns a Vector that shares the same direction but has a length of 1
         # Normalize(True) can also be used if you'd like the length of this Vector (used for optimization)
         magnitude = self.magnitude()
         if magnitude != 0:
@@ -589,38 +591,34 @@ class Vector:
             return Vector(), 0
         return Vector()
 
-    def dot(self, value):
+    def dot(self, value: Vector) -> float:
         return self.x*value.x + self.y*value.y + self.z*value.z
 
-    def cross(self, value):
+    def cross(self, value: Vector) -> Vector:
         return Vector((self.y*value.z) - (self.z*value.y), (self.z*value.x) - (self.x*value.z), (self.x*value.y) - (self.y*value.x))
 
-    def flatten(self):
+    def flatten(self) -> Vector:
         # Sets Z (Vector[2]) to 0, making the Vector 2D
         return Vector(self.x, self.y, 0)
 
-    def render(self):
-        # Returns a list with the x and y values, to be used with pygame
-        return (self.x, self.y)
-
-    def copy(self):
+    def copy(self) -> Vector:
         # Returns a copy of this Vector
         return Vector(*self.tuple())
 
-    def angle(self, value):
+    def angle2D(self, value: Vector) -> float:
         # Returns the 2D angle between this Vector and another Vector in radians
-        return self.flatten().angle3D(value.flatten())
+        return self.flatten().angle(value.flatten())
 
-    def angle3D(self, value):
+    def angle(self, value: Vector) -> Vector:
         # Returns the angle between this Vector and another Vector in radians
         return math.acos(max(min(self.normalize().dot(value.normalize()), 1), -1))
 
-    def rotate(self, angle):
+    def rotate(self, angle: float) -> Vector:
         # Rotates this Vector by the given angle in radians
         # Note that this is only 2D, in the x and y axis
         return Vector((math.cos(angle)*self.x) - (math.sin(angle)*self.y), (math.sin(angle)*self.x) + (math.cos(angle)*self.y), self.z)
 
-    def clamp(self, start, end):
+    def clamp(self, start: Vector, end: Vector) -> Vector:
         # Similar to integer clamping, Vector's clamp() forces the Vector's direction between a start and end Vector
         # Such that Start < Vector < End in terms of clockwise rotation
         # Note that this is only 2D, in the x and y axis
@@ -633,14 +631,14 @@ class Vector:
             return end
         return start
 
-    def dist(self, value):
+    def dist(self, value: Vector) -> float:
         # Distance between 2 vectors
         return (self - value).magnitude()
 
-    def flat_dist(self, value):
+    def flat_dist(self, value: Vector) -> float:
         # Distance between 2 vectors on a 2D plane
         return value.flatten().dist(self.flatten())
 
-    def cap(self, low, high):
+    def cap(self, low: float, high: float) -> Vector:
         # Caps all values in a Vector between 'low' and 'high'
         return Vector(*(max(min(item, high), low) for item in self.tuple()))

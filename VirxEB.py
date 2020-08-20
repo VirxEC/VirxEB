@@ -1,14 +1,17 @@
 from traceback import print_exc
 
-from rlbot.utils.game_state_util import BallState, GameState, Physics
-from rlbot.utils.game_state_util import Vector3
+# from rlbot.utils.game_state_util import BallState, GameState, Physics, Vector3
 from rlbot.utils.structures.quick_chats import QuickChats
 
-from util.agent import math, VirxERLU, Vector
-from util.routines import goto_boost, ball_recovery, short_shot, generic_kickoff, dynamic_backcheck, retreat, block_ground_shot, corner_kickoff, ceiling_shot, face_target, goto
+from util.agent import Vector, VirxERLU, math
 from util.replays import back_kickoff
-from util.tools import find_jump_shot, find_aerial, find_any_aerial, find_any_jump_shot, find_double_jump, find_any_double_jump
-from util.utils import side, almost_equals, send_comm, get_weight, peek_generator
+from util.routines import (ball_recovery, block_ground_shot, ceiling_shot,
+                           corner_kickoff, dynamic_backcheck, generic_kickoff,
+                           goto_boost, retreat, short_shot)
+from util.tools import (find_aerial, find_any_aerial, find_any_double_jump,
+                        find_any_jump_shot, find_double_jump, find_jump_shot)
+from util.utils import (almost_equals, get_weight, peek_generator, send_comm,
+                        side)
 
 
 class VirxEB(VirxERLU):
@@ -60,7 +63,7 @@ class VirxEB(VirxERLU):
             self.backcheck()
         """
         # Shot testing
-        ""
+        """
         if not self.shooting and self.ball.location.z < 250 and not self.predictions['goal']:
             ball_state = BallState(Physics(location=Vector3(0, -3000 * side(self.team), self.ball.location.z), velocity=Vector3(0, 0, 2000), angular_velocity=Vector3(0, 0, 0)))
             game_state = GameState(ball=ball_state)
@@ -69,7 +72,7 @@ class VirxEB(VirxERLU):
         if self.is_clear() and not self.smart_shot(self.best_shot) and self.me.location.dist(self.debug_vector) > 250:
             self.push(face_target(ball=True))
             self.push(goto(self.debug_vector, brake=True))
-        ""
+        """
         # Recovery testing
         """
         self.dbg_2d(f"Has jump: {not self.me.jumped}")
@@ -125,7 +128,7 @@ class VirxEB(VirxERLU):
                     if len(team_to_ball) == 1 or team_to_ball[math.ceil(len(team_to_ball) / 2)] + 10 > self_to_ball:
                         self.can_shoot = None
 
-                    fake_own_goal = self.last_ball_location.dist(self.friend_goal.location) > self.ball.location.dist(self.friend_goal.location)
+                    fake_own_goal = self.last_ball_location.dist(self.friend_goal.location) > self.ball.location.dist(self.friend_goal.location) and self_loc.y < ball_loc.y and abs(self_loc.x) < abs(ball_loc.x)
 
                     # What is 175?
                     # 175 is the radius of the ball rounded up (93) plus the half the length of the longest car rounded up (breakout; 66) with an extra 10% then rounded up
@@ -139,16 +142,16 @@ class VirxEB(VirxERLU):
 
                     max_panic_x_ball_loc = 900 if len(self.friends) >= 2 else 1200
 
-                    if self_loc.y > ball_loc.y + 50 and ((ball_loc.x > 0 and ball_loc.x < max_panic_x_ball_loc and self.smart_shot(self.panic_shots[0], cap=2)) or (ball_loc.x < 0 and ball_loc.x > -max_panic_x_ball_loc and self.smart_shot(self.panic_shots[1], cap=2))):
+                    if self_loc.y > ball_loc.y + 50 and ((ball_loc.x > 0 and ball_loc.x < max_panic_x_ball_loc and self.smart_shot(self.panic_shots[0], cap=3)) or (ball_loc.x < 0 and ball_loc.x > -max_panic_x_ball_loc and self.smart_shot(self.panic_shots[1], cap=3))):
                         return
 
                     if fake_own_goal or self.predictions['own_goal'] or (len(team_to_ball) > 1 and team_to_ball[math.ceil(len(team_to_ball) / 2)] + 10 > self_to_ball) or (len(team_to_ball) == 1 and self_to_ball < 2560) or (abs(ball_loc.x) < 900 and ball_loc.y > 1280):
                         if ball_loc.y < 1280:
                             for shot in self.defensive_shots:
-                                if self.smart_shot(shot, cap=2):
+                                if self.smart_shot(shot):
                                     return
 
-                        if self_loc.y > ball_loc.y and team_to_ball[0] is self_to_ball and self.smart_shot(weight=self.max_shot_weight - 1, cap=2):
+                        if self_loc.y > ball_loc.y and team_to_ball[0] is self_to_ball and self.smart_shot(weight=self.max_shot_weight - 1):
                             return
 
                         if (fake_own_goal or self.predictions['own_goal']) and abs(self_loc.x) < abs(ball_loc.x) - 100 and self_loc.y < ball_loc.y - 50:
@@ -221,7 +224,14 @@ class VirxEB(VirxERLU):
                     self.print("You can defend")
             elif self.playstyle is self.playstyles.Offensive:
                 if msg.get("attacking"):
-                    self.print("Speed pinch kickoff!")
+                    if self.stack[0].__class__.__name__ == "corner_kickoff":
+                        self.print("Speed pinch kickoff!")
+                    elif msg['index'] < self.index:
+                        self.playstyle = self.playstyles.Neutral
+                        self.clear()
+                        self.goto_nearest_boost()
+
+                        self.print("All yours")
 
     def handle_quick_chat(self, index, team, quick_chat):
         try:
@@ -287,9 +297,11 @@ class VirxEB(VirxERLU):
 
     def neutral_ground(self):
         if self.is_clear():
+            ball_loc = self.predictions['ball_struct'].slices[self.future_ball_location_slice].physics.location
+            ball_loc = Vector(ball_loc.x, ball_loc.y, ball_loc.z)
             if self.predictions['self_to_ball'] > 3840:
                 self.backcheck(clear_on_valid=True)
-            elif self.me.boost < 40 and self.ball.location.y * side(self.team) < -1280 and not self.predictions['goal'] and self.ball.location.flat_dist(self.foe_goal.location) > 1280:
+            elif self.me.boost < 40 and ball_loc.y * side(self.team) < -1280 and not self.predictions['goal'] and ball_loc.flat_dist(self.foe_goal.location) > 1280:
                 self.goto_nearest_boost()
 
             if self.is_clear():

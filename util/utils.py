@@ -8,7 +8,7 @@ def backsolve(target, car, time, gravity):
     d = target - car.location
     dvx = ((d.x/time) - car.velocity.x) / time
     dvy = ((d.y/time) - car.velocity.y) / time
-    dvz = (((d.z/time) - car.velocity.z) / time) + (gravity * -1 * time)
+    dvz = (((d.z/time) - car.velocity.z) / time) - (gravity.z * time)
     return Vector(dvx, dvy, dvz)
 
 
@@ -17,7 +17,7 @@ def cap(x, low, high):
     return max(min(x, high), low)
 
 
-def defaultPD(agent, local_target, direction=1, upside_down=False):
+def defaultPD(agent, local_target, upside_down=False):
     # points the car towards a given local target.
     # Direction can be changed to allow the car to steer towards a target while driving backwards
     up = agent.me.local(Vector(z=-1 if upside_down else 1))  # where "up" is in local coordinates
@@ -35,27 +35,19 @@ def defaultPD(agent, local_target, direction=1, upside_down=False):
     return target_angles
 
 
-def defaultThrottle(agent, target_speed, direction=1):
+def defaultThrottle(agent, target_speed):
     # accelerates the car to a desired speed using throttle and boost
     car_speed = agent.me.local_velocity().x
-    t = (target_speed * direction) - car_speed
+    t = target_speed - car_speed
     agent.controller.throttle = cap((t**2) * sign(t)/1000, -1, 1)
-    agent.controller.boost = t > 150 and car_speed < target_speed - (agent.boost_accel / 120) and agent.controller.throttle == 1 and (agent.me.airborne or (abs(agent.controller.steer) < 0.1 and not agent.me.airborne))
+    agent.controller.boost = t > 0 and t >= agent.boost_accel / 120 and agent.controller.throttle == 1 and (agent.me.airborne or (abs(agent.controller.steer) < 0.1 and not agent.me.airborne))
     return car_speed
 
 
 def in_field(point, radius):
     # determines if a point is inside the standard soccer field
     point = Vector(abs(point.x), abs(point.y), abs(point.z))
-    if point.x > 4080 - radius:
-        return False
-    elif point.y > 5900 - radius:
-        return False
-    elif point.x > 880 - radius and point.y > 5105 - radius:
-        return False
-    elif point.x > 2650 and point.y > -point.x + 8025 - radius:
-        return False
-    return True
+    return not (point.x > 4080 - radius or point.y > 5900 - radius or (point.x > 880 - radius and point.y > 5105 - radius) or (point.x > 2650 and point.y > -point.x + 8025 - radius))
 
 
 def find_slope(shot_vector, car_to_target):
