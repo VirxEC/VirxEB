@@ -570,7 +570,7 @@ class jump_shot:
         # If we're dead on with the shot (ex 0.25 radians off) then we'll jump a lot sooner
         # any number larger than 0 works for the minimum
         # 584 is the highest you can go, for the maximum
-        jump_threshold = cap(abs(Vector(x=1).angle2D(agent.me.local_location(self.dodge_point))) * 400, 100, 500)
+        jump_threshold = cap(abs(Vector(x=1).angle2D(agent.me.local_location(self.dodge_point))) * 400, 100 if self.dodge_point.z > 150 else 200, 500)
         # factoring in how close to jump we are
         adjustment *= (cap(jump_threshold - (acceleration_required.z), 0, jump_threshold) / jump_threshold)
         # we don't adjust the final target if we are already jumping

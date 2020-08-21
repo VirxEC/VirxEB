@@ -42,3 +42,5 @@ Bots can now boost in the air via default_throttle
 If the ball is getting closer to the net and the bot is behind the ball, it will treat it like the ball is about to go into the net
 Cleaned up the code a little bit
 Better offensive checks
+Each car picks from a list of 10 Octane-preset cars to rock the competition with :P
+Defensive bots will face the ball when they're too far off

@@ -7,7 +7,7 @@ from util.agent import Vector, VirxERLU, math
 from util.replays import back_kickoff
 from util.routines import (ball_recovery, block_ground_shot, ceiling_shot,
                            corner_kickoff, shadow, generic_kickoff,
-                           goto_boost, retreat, short_shot)
+                           goto_boost, retreat, short_shot, face_target)
 from util.tools import (find_aerial, find_any_aerial, find_any_double_jump,
                         find_any_jump_shot, find_double_jump, find_jump_shot)
 from util.utils import (almost_equals, get_weight, peek_generator, send_comm,
@@ -115,6 +115,9 @@ class VirxEB(VirxERLU):
                 ball_loc = self.ball.location * side(self.team)
                 self_loc = self.me.location * side(self.team)
 
+                ball_f = self.predictions['ball_struct'].slices[self.future_ball_location_slice].physics.location
+                ball_f = Vector(ball_f.x, ball_f.y, ball_f.z)
+
                 if not self.predictions['own_goal'] and self_loc.y <= ball_loc.y - 50 and not self.shooting and (self.is_clear() or self.stack[0].__class__.__name__ == 'goto_boost') and abs(ball_loc.x) > 1024 and self.backcheck(clear_on_valid=True):
                     return
 
@@ -203,6 +206,10 @@ class VirxEB(VirxERLU):
 
                     if self_loc.y <= ball_loc.y - 50 and not self.shooting and (self.is_clear() or self.stack[0].__class__.__name__ == 'goto_boost') and self.backcheck(clear_on_valid=True):
                         return
+
+                if self.is_clear() and ball_f.y * side(self.team) < 3840 and abs(Vector(x=1).angle(self.me.local_location(ball_f))) >= 1:
+                    self.push(face_target(target=ball_f))
+
             elif self.me.airborne:
                 self.playstyles_switch['air'][self.playstyle]()
 
@@ -210,6 +217,8 @@ class VirxEB(VirxERLU):
                     self.push(ball_recovery())
             else:
                 self.playstyles_switch['ground'][self.playstyle]()
+
+            self.last_ball_location = self.ball.location
         ""
 
     def handle_match_comm(self, msg):
@@ -264,10 +273,14 @@ class VirxEB(VirxERLU):
             self.clear()
 
         if self.is_clear():
+            ball = self.predictions['ball_struct'].slices[self.future_ball_location_slice].physics.location
+            ball = Vector(ball.x, ball.y, ball.z)
             if self.predictions['self_from_goal'] > 2560:
                 self.backcheck(simple=True)
-            if self.me.boost < 72 and self.ball.location.y * side(self.team) < -1280:
-                self.goto_nearest_boost(only_small=self.ball.location.y * side(self.team) > -2560)
+            if self.me.boost < 72 and ball.y * side(self.team) < -1280:
+                self.goto_nearest_boost(only_small=ball.y * side(self.team) > -2560)
+            elif abs(Vector(x=1).angle(self.me.local_location(ball))) >= 1:
+                self.push(face_target(target=ball))
             elif self.predictions['self_from_goal'] > 750:
                 self.backcheck(simple=True)
 
