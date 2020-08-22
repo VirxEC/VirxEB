@@ -89,7 +89,7 @@ class double_jump:
             agent.shooting = True
 
         if self.debug_start:
-            agent.print(f"Hit ball via double jump {round(agent.me.location.dist(self.dodge_point), 4)}uus away in {round(self.intercept_time - agent.time, 4)}s")
+            agent.print(f"Hit ball via double jump {round(agent.me.location.dist(self.ball_location), 4)}uus away in {round(self.intercept_time - agent.time, 4)}s")
             self.debug_start = False
 
         raw_time_remaining = self.intercept_time - agent.time
@@ -97,17 +97,17 @@ class double_jump:
         time_remaining = cap(raw_time_remaining, 0.001, 10)
         car_to_ball = self.ball_location - agent.me.location
         # whether we should go forwards or backwards
-        angle_to_target = abs(Vector(x=1).angle2D(agent.me.local_location(self.dodge_point)))
+        angle_to_target = abs(Vector(x=1).angle2D(agent.me.local_location(self.ball_location)))
         direction = 1 if angle_to_target < 2.2 else -1
         # whether we are to the left or right of the shot vector
         side_of_shot = sign(self.shot_vector.cross(Vector(z=1)).dot(car_to_ball))
 
-        car_to_dodge_point = self.dodge_point - agent.me.location
+        car_to_dodge_point = self.ball_location - agent.me.location
         car_to_dodge_perp = car_to_dodge_point.cross(Vector(z=side_of_shot))  # perpendicular
         distance_remaining = car_to_dodge_point.magnitude()
 
         speed_required = distance_remaining / time_remaining
-        acceleration_required = backsolve(self.dodge_point, agent.me, time_remaining, Vector() if not self.jumping else agent.gravity)
+        acceleration_required = backsolve(self.ball_location, agent.me, time_remaining - 0.5, Vector() if not self.jumping else agent.gravity)
         local_acceleration_required = agent.me.local(acceleration_required)
 
         # The adjustment causes the car to circle around the dodge point in an effort to line up with the shot vector
@@ -119,11 +119,11 @@ class double_jump:
         # Any thing below 250 might cause it to whiff
         # Anything above 400 might cause it to not hit it on target
         # 551 is the highest point that this double jump routine can hit the ball at
-        jump_threshold = cap(551 - self.dodge_point.z, 250, 400)
+        jump_threshold = cap(551 - self.ball_location.z, 250, 400)
         # factoring in how close to jump we are
         adjustment *= (cap(jump_threshold - (acceleration_required.z), 0, jump_threshold) / jump_threshold)
         # we don't adjust the final target if we are already jumping
-        final_target = self.dodge_point + ((car_to_dodge_perp.normalize() * adjustment) if not self.jumping else 0) + Vector(z=50)
+        final_target = self.ball_location + ((car_to_dodge_perp.normalize() * adjustment) if not self.jumping else 0) + Vector(z=50)
         # Ensuring our target isn't too close to the sides of the field, where our car would get messed up by the radius of the curves
 
         # Some adjustment to the final target to ensure it's inside the field and we don't try to drive through any goalposts to reach it
@@ -133,9 +133,9 @@ class double_jump:
         local_final_target = agent.me.local_location(final_target)
 
         # drawing debug lines to show the dodge point and final target (which differs due to the adjustment)
-        agent.line(agent.me.location, self.dodge_point, agent.renderer.white())
-        agent.line(self.dodge_point-Vector(z=100), self.dodge_point+Vector(z=100), agent.renderer.red())
-        agent.line(final_target-Vector(z=100), final_target+Vector(z=100), agent.renderer.green())
+        agent.polyline((agent.me.location, self.ball_location, self.dodge_point), agent.renderer.white())
+        agent.line(self.dodge_point-Vector(z=100), self.dodge_point+Vector(z=100), agent.renderer.green())
+        agent.line(final_target-Vector(z=100), final_target+Vector(z=100), agent.renderer.red())
 
         if not self.jumping:
             defaultPD(agent, local_final_target)
@@ -317,7 +317,8 @@ class flip:
 
 
 class brake:
-    def run(self, agent, manual=False):
+    @staticmethod
+    def run(agent, manual=False):
         speed = agent.me.local_velocity().x
         if speed > 0:
             agent.controller.throttle = -1
@@ -387,7 +388,7 @@ class goto:
         velocity = 1+agent.me.velocity.magnitude()
         if angle_to_target < 0.05 and distance_remaining > 1920 and velocity > 600 and velocity < 2150 and distance_remaining / velocity > 2:
             agent.push(flip(local_target))
-        elif angle_to_target >= 1.57 and distance_remaining > 1000 and velocity < 200 and distance_remaining / velocity > 2:
+        elif direction == -1 and distance_remaining > 1000 and velocity < 200 and distance_remaining / velocity > 2:
             agent.push(flip(local_target, True))
         elif agent.me.airborne:
             agent.push(recovery(self.target))
@@ -543,7 +544,9 @@ class jump_shot:
         self.counter = 0
 
     def run(self, agent):
-        agent.shooting = True
+        if not agent.shooting:
+            agent.shooting = True
+
         raw_time_remaining = self.intercept_time - agent.time
         # Capping raw_time_remaining above 0 to prevent division problems
         time_remaining = cap(raw_time_remaining, 0.001, 10)
@@ -740,8 +743,9 @@ class short_shot:
         self.start_time = None
 
     def run(self, agent):
-        agent.shooting = True
-        agent.shot_weight = -1
+        if not agent.shooting or agent.shot_weight != -1:
+            agent.shooting = True
+            agent.shot_weight = -1
 
         if self.start_time is None:
             self.start_time = agent.time

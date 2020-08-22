@@ -24,7 +24,7 @@ def find_jump_shot(agent, target, weight=None, cap_=6):
         agent.me.boost
     )
 
-    # Loop throught the slices
+    # Loop through the slices
     for ball_slice in slices:
         # Gather some data about the slice
         intercept_time = ball_slice.game_seconds

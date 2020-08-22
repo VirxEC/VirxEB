@@ -24,7 +24,7 @@ class Playstyle(Enum):
 class VirxERLU(BaseAgent):
     # Massive thanks to ddthj/GoslingAgent (GitHub repo) for the basis of VirxERLU
     def initialize_agent(self):
-        self.tournament = True
+        self.tournament = False
         self.startup_time = time_ns()
 
         self.debug = [[], []]
@@ -111,13 +111,15 @@ class VirxERLU(BaseAgent):
         self.kickoff_done = True
         self.shooting = False
         self.odd_tick = 0
+        self.best_shot_value = 92
+
+        self.future_ball_location_slice = 180
 
         self.playstyles = Playstyle
         self.playstyle = self.playstyles.Neutral
         self.can_shoot = None
         self.shot_weight = -1
         self.shot_time = -1
-        self.future_ball_location_slice = 180
         self.last_ball_location = Vector(z=93)
 
     def retire(self):

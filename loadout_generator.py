@@ -21,7 +21,7 @@ class LoadoutGenerator(BaseLoadoutGenerator):
         Twinzer - 2853
         Fennec - 4284 - Weight - 2
         """
-        loadout.car_id = random.choice((23, 26, 30, 402, 1172, 1295, 1533, 1568, 2853, 4284), weights=(3, 1, 1, 1, 1, 1, 1, 2, 1, 2))
+        loadout.car_id = random.choice((23, 23, 23, 26, 30, 402, 1172, 1295, 1533, 1568, 1568, 2853, 4284, 4284))
 
         # bots that don't have the stars decal will get the interstellar decal :P
         decal_id = {
