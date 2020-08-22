@@ -17,7 +17,6 @@ from prediction import Prediction
 
 class Playstyle(Enum):
     Defensive = -1
-    Fancy = -0.5
     Neutral = 0
     Offensive = 1
 

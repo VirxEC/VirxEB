@@ -944,9 +944,7 @@ class ceiling_shot:
                 agent.push(goto_boost(closest))
         elif self.wait:
             agent.dbg_2d("Waiting")
-            if agent.playstyle is not agent.playstyles.Fancy:
-                agent.pop()
-            elif agent.me.location.dist(self.wait_target) > 150:
+            if agent.me.location.dist(self.wait_target) > 150:
                 local_target = agent.me.local_location(self.wait_target)
                 angle_to_target = abs(Vector(x=1).angle2D(local_target))
                 direction = -1 if agent.me.location.z > 100 and angle_to_target >= 2.2 else 1

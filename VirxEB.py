@@ -5,9 +5,9 @@ from rlbot.utils.structures.quick_chats import QuickChats
 
 from util.agent import Vector, VirxERLU, math
 from util.replays import back_kickoff
-from util.routines import (ball_recovery, block_ground_shot, ceiling_shot,
-                           corner_kickoff, shadow, generic_kickoff,
-                           goto_boost, retreat, short_shot, face_target)
+from util.routines import (ball_recovery, block_ground_shot, corner_kickoff,
+                           face_target, generic_kickoff, goto_boost, retreat,
+                           shadow, short_shot)
 from util.tools import (find_aerial, find_any_aerial, find_any_double_jump,
                         find_any_jump_shot, find_double_jump, find_jump_shot)
 from util.utils import (almost_equals, get_weight, peek_generator, send_comm,
@@ -19,13 +19,11 @@ class VirxEB(VirxERLU):
         self.playstyles_switch = {
             'ground': {
                 self.playstyles.Defensive: self.defend_ground,
-                self.playstyles.Fancy: self.fancy_ground,
                 self.playstyles.Neutral: self.neutral_ground,
                 self.playstyles.Offensive: self.attack_ground
             },
             'air': {
                 self.playstyles.Defensive: self.defend_air,
-                self.playstyles.Fancy: self.fancy_air,
                 self.playstyles.Neutral: self.neutral_air,
                 self.playstyles.Offensive: self.attack_air
             }
@@ -34,8 +32,7 @@ class VirxEB(VirxERLU):
         self.panic_switch = {
             self.playstyles.Defensive: 1920,
             self.playstyles.Offensive: 1280,
-            self.playstyles.Neutral: 640,
-            self.playstyles.Fancy: 0
+            self.playstyles.Neutral: 640
         }
 
     def test(self):
@@ -290,23 +287,6 @@ class VirxEB(VirxERLU):
 
             if shot is not None:
                 self.shoot_from(shot, clear_on_valid=True)
-
-    def fancy_ground(self):
-        if self.is_clear():
-            self.push(ceiling_shot())
-
-    def fancy_air(self):
-        if self.odd_tick % 2 == 0 and self.can_shoot is None and self.me.boost > 12 and not self.shooting:
-            shot = self.get_shot(self.best_shot)
-            if shot is None:
-                shot = self.get_shot(self.offensive_shots[0], cap=2.5)
-
-            if shot is None:
-                shot = self.get_shot(self.offensive_shots[0], cap=2.5)
-
-            if shot is not None:
-                if shot['intercept_time'] < self.shot_time - 0.05:
-                    self.shoot_from(shot, clear_on_valid=True)
 
     def neutral_ground(self):
         if self.is_clear():

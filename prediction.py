@@ -76,8 +76,7 @@ class Prediction(Thread):
                         elif self.agent.predictions['self_from_goal'] == min(self.agent.predictions["team_from_goal"]):
                             self.agent.playstyle = self.agent.playstyles.Defensive if len_friends > 1 or (len_friends == 1 and (self.agent.predictions['was_down'] or abs(self.agent.game.friend_score - self.agent.game.foe_score) > 1)) else self.agent.playstyles.Neutral
                         else:
-                            tm8s = sorted(self.agent.predictions["team_from_goal"])
-                            self.agent.playstyle = self.agent.playstyles.Fancy if len_friends >= 3 and self.agent.ball.location.y * side < -640 and self.agent.predictions['self_from_goal'] not in {tm8s[0], tm8s[1], tm8s[-1]} else self.agent.playstyles.Neutral
+                            self.agent.playstyle = self.agent.playstyles.Neutral
                     else:
                         self.agent.playstyle = self.agent.playstyles.Defensive
                 else:
