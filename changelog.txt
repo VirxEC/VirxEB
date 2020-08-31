@@ -44,3 +44,14 @@ Cleaned up the code a little bit
 Better offensive checks
 Each car picks from a list of 10 Octane-preset cars to rock the competition with :P
 Defensive bots will face the ball when they're too far off
+Instead of replacing shot, shots are update with new information
+Aerials will now be upgrade mid-flight
+Aerials can now hit the ball upwards/downwards
+Fixed a lot of false positives with pathfinding's rule 1 with tm8's detector
+Gravity now gets set after it's been changed in-game. (Via BakkesMod or similiar things)
+Dumps will now be into the diagonals, allowing for centers
+`self.can_shoot` is ignored if (playstyle is Neutral and shot is best_shot or ball_going_in_own_goal)
+New, faster, & cleaner methods 'find_shot' and 'find_any_shot'
+Aerials with a target now have a default cap of 6
+Added the ability for a bot to wait a lot longer for it's shot, if it's on offense
+New hyper-aggro bot 'ABot'

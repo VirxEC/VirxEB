@@ -19,7 +19,7 @@ class Gui(Thread):
 
         root.title("VirxEC/VirxERLU")
 
-        root.geometry("255x360")  # og: 255x300
+        root.geometry("255x390")
 
         title = ttk.Label(root, text=f"{self.agent.name} ({team}) hosted by VirxERLU")
         title.pack()
@@ -48,6 +48,17 @@ class Gui(Thread):
 
         air_bud_btn = ttk.Checkbutton(root, text='Air Bud', variable=air_bud_bool, command=set_air_bud)
         air_bud_btn.pack()
+
+        # Aerials
+
+        aerials_bool = BooleanVar()
+        aerials_bool.set(self.agent.aerials)
+
+        def set_aerials():
+            self.agent.aerials = aerials_bool.get()
+
+        aerials_btn = ttk.Checkbutton(root, text='Aerials', variable=aerials_bool, command=set_aerials)
+        aerials_btn.pack()
 
         # Disable driving
 
