@@ -7,7 +7,7 @@ from util.agent import Vector, VirxERLU, math
 from util.replays import back_kickoff
 from util.routines import (ball_recovery, block_ground_shot, corner_kickoff,
                            face_target, generic_kickoff, goto_boost, retreat,
-                           shadow, short_shot, goto)
+                           shadow, short_shot, goto, wave_dash)
 from util.tools import find_shot, find_any_shot
 from util.utils import (almost_equals, get_weight, peek_generator, send_comm,
                         side, cap)
@@ -35,11 +35,8 @@ class VirxEB(VirxERLU):
         }
 
     def test(self):
-        # Go to nearest boost testing
-        """
         if self.is_clear():
-            self.goto_nearest_boost()
-        """
+            self.push(wave_dash())
         # Block ground shot testing
         """
         if self.is_clear():
@@ -92,6 +89,9 @@ class VirxEB(VirxERLU):
         """
 
     def run(self):
+        self.test()
+        return
+
         if not self.kickoff_done:
             if self.is_clear():
                 if len(self.friends) > 0:
