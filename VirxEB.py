@@ -35,8 +35,6 @@ class VirxEB(VirxERLU):
         }
 
     def test(self):
-        if self.is_clear():
-            self.push(wave_dash())
         # Block ground shot testing
         """
         if self.is_clear():
@@ -89,9 +87,6 @@ class VirxEB(VirxERLU):
         """
 
     def run(self):
-        self.test()
-        return
-
         if not self.kickoff_done:
             if self.is_clear():
                 if len(self.friends) > 0:
