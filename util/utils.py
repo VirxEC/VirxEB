@@ -41,7 +41,7 @@ def defaultThrottle(agent, target_speed):
     car_speed = agent.me.local_velocity().x
     t = target_speed - car_speed
     agent.controller.throttle = cap((t**2) * sign(t)/1000, -1, 1)
-    agent.controller.boost = (t > 150 or (target_speed > 1400 and t > agent.boost_accel / 30)) and agent.controller.throttle == 1 and (agent.me.airborne or (abs(agent.controller.steer) < 0.1 and not agent.me.airborne))
+    agent.controller.boost = (t > 150 or (target_speed > 1400 and t > agent.boost_accel / 30)) and agent.controller.throttle == 1 and (agent.me.airborne or (abs(agent.controller.steer) < 0.25 and not agent.me.airborne))
     return car_speed
 
 
@@ -81,11 +81,17 @@ def post_correction(ball_location, left_target, right_target):
 
 def quadratic(a, b, c):
     # Returns the two roots of a quadratic
-    inside = math.sqrt((b*b) - (4*a*c))
-    if a != 0:
-        return (-b + inside)/(2*a), (-b - inside)/(2*a)
+    inside = (b*b) - (4*a*c)
 
-    return -1, -1
+    try:
+        inside = math.sqrt(inside)
+    except ValueError:
+        return -1, -1
+
+    if a == 0:
+        return -1, -1
+
+    return (-b + inside)/(2*a), (-b - inside)/(2*a)
 
 
 def shot_valid(agent, shot, target=None):
@@ -97,7 +103,7 @@ def shot_valid(agent, shot, target=None):
 
     # First finds the two closest slices in the ball prediction to shot's intercept_time
     # threshold controls the tolerance we allow the ball to be off by
-    slices = agent.predictions['ball_struct'].slices
+    slices = agent.ball_prediction_struct.slices
     soonest = 0
     latest = len(slices)-1
     while len(slices[soonest:latest+1]) > 2:
@@ -215,7 +221,7 @@ def point_inside_quadrilateral_2d(point, quadrilateral):
 
 
 def valid_ceiling_shot(agent, cap_=5):
-    struct = agent.predictions['ball_struct']
+    struct = agent.ball_prediction_struct
 
     if struct is None:
         return

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import itertools
 import math
+import os
+import numpy as np
 from time import time_ns
 from dataclasses import dataclass
 from enum import Enum
@@ -24,8 +26,16 @@ class Playstyle(Enum):
 class VirxERLU(BaseAgent):
     # Massive thanks to ddthj/GoslingAgent (GitHub repo) for the basis of VirxERLU
     def initialize_agent(self):
-        self.tournament = True
+        self.tournament = False
         self.startup_time = time_ns()
+
+        self.record = False
+
+        if self.record:
+            self.n = (100, 10845, 1, 11988, 11988, 1, 1, 10845, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044)
+            self.inf_arr = (0, 0, -1e+4)
+            self.history_input = []
+            self.history_output = []
 
         self.debug = [[], []]
         self.debugging = not self.tournament
@@ -39,7 +49,8 @@ class VirxERLU(BaseAgent):
         self.debug_vector = Vector()
         self.disable_driving = False
         self.goalie = False
-        self.air_bud = False
+        self.jump = True
+        self.double_jump = True
         self.aerials = True
 
         if not self.tournament:
@@ -51,12 +62,12 @@ class VirxERLU(BaseAgent):
             "closest_enemy": 0,
             "own_goal": False,
             "goal": False,
-            "ball_struct": None,
             "team_from_goal": (),
             "team_to_ball": (),
             "self_from_goal": 0,
             "self_to_ball": 0,
             "was_down": False,
+            "enemy_time_to_ball": 0,
             "done": False
         }
 
@@ -64,29 +75,39 @@ class VirxERLU(BaseAgent):
         self.print("Starting the predictive service...")
         self.prediction.start()
         self.match_comms = None
+        self.ball_prediction_struct = None
 
         self.print("Building game information")
 
         mutators = self.get_match_settings().MutatorSettings()
 
-        gravity = [
+        gravity = (
             Vector(z=-650),
             Vector(z=-325),
             Vector(z=-1137.5),
             Vector(z=-3250)
-        ]
+        )
 
         base_boost_accel = 991 + (2/3)
 
-        boost_accel = [
+        boost_accel = (
             base_boost_accel,
             base_boost_accel * 1.5,
             base_boost_accel * 2,
             base_boost_accel * 10
-        ]
+        )
+
+        boost_amount = (
+            "default",
+            "unlimited",
+            "slow recharge",
+            "fast recharge",
+            "no boost"
+        )
 
         self.gravity = gravity[mutators.GravityOption()]
         self.boost_accel = boost_accel[mutators.BoostStrengthOption()]
+        self.boost_amount = boost_amount[mutators.BoostOption()]
 
         self.friends = ()
         self.foes = ()
@@ -100,6 +121,7 @@ class VirxERLU(BaseAgent):
 
         self.friend_goal = goal_object(self.team)
         self.foe_goal = goal_object(not self.team)
+        self.friend_scored = False
 
         self.stack = []
         self.time = 0
@@ -111,7 +133,7 @@ class VirxERLU(BaseAgent):
         self.kickoff_flag = False
         self.kickoff_done = True
         self.shooting = False
-        self.odd_tick = 0
+        self.odd_tick = -1
         self.best_shot_value = 92
 
         self.future_ball_location_slice = 180
@@ -128,7 +150,7 @@ class VirxERLU(BaseAgent):
         if not self.tournament:
             self.gui.stop()
 
-        if len(self.friends) > 0:
+        if self.match_comms is not None:
             self.match_comms.stop()
 
         self.prediction.stop()
@@ -145,31 +167,7 @@ class VirxERLU(BaseAgent):
         self.refresh_player_lists(packet)
         self.ball.update(packet)
 
-        foe_team = -1 if self.team == 1 else 1
-        team = -foe_team
-
-        self.defensive_shots = (
-            (self.foe_goal.left_post, self.foe_goal.right_post),
-            (Vector(4096, foe_team * 3968, 1900), Vector(2944, foe_team * 5120, 1900)),
-            (Vector(-4096, foe_team * 3968, 1900), Vector(-2944, foe_team * 5120, 1900))
-        )
-
-        self.panic_shots = (
-            (Vector(3100 * team, team * 3620, 1000), Vector(3100 * team, team * 5120, 1000)),
-            (Vector(-3100 * team, team * 3620, 1000), Vector(-3100 * team, team * 5120, 1000))
-        )
-
-        self.offensive_shots = (
-            (self.foe_goal.left_post, self.foe_goal.right_post),
-            (Vector(foe_team * 893, foe_team * 5120, 100), Vector(foe_team * 893, foe_team * 4720, 320)),
-            (Vector(-foe_team * 893, foe_team * 5120, 100), Vector(-foe_team * 893, foe_team * 4720, 320))
-        )
-
-        self.best_shot = (Vector(foe_team * 650, foe_team * 5125, 320), Vector(-foe_team * 650, foe_team * 5125, 320))
-
-        self.max_shot_weight = 4
-
-        self.best_shot_value = round((92.75 + min(self.me.hitbox) / 2) * 0.99, 4)
+        self.best_shot_value = math.floor((92.75 + self.me.hitbox.width / 2))
         self.print(f"Best shot value: {self.best_shot_value}")
 
         self.init()
@@ -177,8 +175,10 @@ class VirxERLU(BaseAgent):
         self.ready = True
 
         load_time = (time_ns() - self.startup_time) / 1e+6
-        team = "Blue" if self.team == 0 else "Red"
-        print(f"{self.name} ({team}): Built game info in {load_time} milliseconds")
+        print(f"{self.name}: Built game info in {load_time} milliseconds")
+
+        if self.name in {"VirxEB", "ABot", "VirxEB-dev", "ABot-dev", "VirxEAI", "VirxEAI-dev", "Dragon", "ElonMB", "VirxE B"}:
+            print(f"{self.name}: Check me out at https://www.virxcase.dev!!!")
 
     def refresh_player_lists(self, packet):
         # Useful to keep separate from get_ready because humans can join/leave a match
@@ -210,8 +210,7 @@ class VirxERLU(BaseAgent):
 
     def print(self, item):
         if not self.tournament:
-            team = "Blue" if self.team == 0 else "Red"
-            print(f"{self.name} ({team}): {item}")
+            print(f"{self.name}: {item}")
 
     def dbg_3d(self, item):
         self.debug[0].append(str(item))
@@ -236,11 +235,16 @@ class VirxERLU(BaseAgent):
         set(map(lambda car: car.update(packet), self.foes))
         set(map(lambda pad: pad.update(packet), self.boosts))
 
+        prev_goals = self.game.friend_score + 0
+
         self.ball.update(packet)
         self.me.update(packet)
         self.game.update(self.team, packet)
         self.time = self.game.time
         self.gravity = self.game.gravity
+
+        if not self.friend_scored and self.game.friend_score > prev_goals:
+            self.friend_scored = True
 
         # When a new kickoff begins we empty the stack
         if not self.kickoff_flag and self.game.round_active and self.game.kickoff:
@@ -251,18 +255,18 @@ class VirxERLU(BaseAgent):
         self.kickoff_flag = self.game.round_active and self.game.kickoff
         self.ball_to_goal = self.friend_goal.location.flat_dist(self.ball.location)
 
-        self.predictions['ball_struct'] = self.get_ball_prediction_struct()
-        self.prediction.event.set()
-
         self.odd_tick += 1
 
         if self.odd_tick > 3:
             self.odd_tick = 0
 
+        self.ball_prediction_struct = self.get_ball_prediction_struct()
+        self.prediction.event.set()
+
     def get_output(self, packet):
         try:
             # Reset controller
-            self.controller.__init__()
+            self.controller.__init__(use_item=True)
 
             # Get ready, then preprocess
             if not self.ready:
@@ -280,6 +284,8 @@ class VirxERLU(BaseAgent):
                 except Exception:
                     print(self.name)
                     print_exc()
+
+                self.dbg_2d(f"Predicted enemy time to ball: {round(self.predictions['enemy_time_to_ball'] - self.time, 1)}")
 
                 if self.debugging:
                     if self.debug_3d_bool:
@@ -300,8 +306,8 @@ class VirxERLU(BaseAgent):
                         self.renderer.draw_string_2d(20, 300, 2, 2, "\n".join(self.debug[1]), self.renderer.team_color(alt_color=True))
                         self.debug[1] = []
 
-                    if self.debug_ball_path and self.predictions['ball_struct'] is not None:
-                        self.polyline(tuple(Vector(ball_slice.physics.location.x, ball_slice.physics.location.y, ball_slice.physics.location.z) for ball_slice in self.predictions['ball_struct'].slices[::self.debug_ball_path_precision]))
+                    if self.debug_ball_path and self.ball_prediction_struct is not None:
+                        self.polyline(tuple(Vector(ball_slice.physics.location.x, ball_slice.physics.location.y, ball_slice.physics.location.z) for ball_slice in self.ball_prediction_struct.slices[::self.debug_ball_path_precision]))
                 else:
                     self.debug = [[], []]
 
@@ -309,10 +315,79 @@ class VirxERLU(BaseAgent):
                 if not self.is_clear():
                     self.stack[-1].run(self)
 
+                    if self.odd_tick == 0 and self.record:
+                        try:
+                            closest_foe_to_ball = min((foe for foe in self.foes if not foe.demolished), key=lambda f: f.location.dist(self.me.ball.location))
+                        except Exception:
+                            closest_foe_to_ball = None
+
+                        try:
+                            closest_friend_to_net = min((friend for friend in self.friends if not friend.demolished), key=lambda f: f.location.dist(self.friend_goal.location))
+                        except Exception:
+                            closest_friend_to_net = None
+
+                        try:
+                            closest_friend_to_ball = min((friend for friend in self.friends if not friend.demolished), key=lambda f: f.location.dist(self.ball.location))
+                        except Exception:
+                            closest_friend_to_ball = None
+
+
+                        self.history_input.append(np.array([
+                            self.me.boost,
+                            self.ball_to_goal,  # 2
+                            1 if self.me.airborne else -1,
+                            self.predictions['self_to_ball'],  #4
+                            self.predictions['self_from_goal'], 
+                            1 if self.predictions['goal'] else -1,  # 6
+                            1 if self.predictions['own_goal'] else -1,
+                            self.ball.location.dist(self.foe_goal.location),  # 8
+                            *self.me.location.int(),
+                            *self.me.local_velocity().int(),  # 14
+                            *self.me.local_location(self.ball.location).int(),
+                            *self.me.local_velocity(self.ball.velocity).int(),  # 20
+                            *(self.me.local_location(closest_foe_to_ball.location).int() if closest_foe_to_ball is not None else self.inf_arr),
+                            *(self.me.local_velocity(closest_foe_to_ball.velocity).int() if closest_foe_to_ball is not None else self.inf_arr),  # 26
+                            *(self.me.local_location(closest_friend_to_net.location).int() if closest_friend_to_net is not None else self.inf_arr),
+                            *(self.me.local_velocity(closest_friend_to_net.velocity).int() if closest_friend_to_net is not None else self.inf_arr),  # 32
+                            *(self.me.local_location(closest_friend_to_ball.location).int() if closest_friend_to_ball is not None else self.inf_arr),
+                            *(self.me.local_velocity(closest_friend_to_ball.velocity).int() if closest_friend_to_ball is not None else self.inf_arr),  # 38
+                        ]))
+
+                        for y in range(len(self.history_input[-1])):
+                            self.history_input[-1][y] /= self.n[y]
+
+                        self.history_output.append(np.array([
+                            round(max(min(self.controller.throttle, 1), -1), 2),
+                            round(max(min(self.controller.steer, 1), -1), 2),
+                            round(max(min(self.controller.pitch, 1), -1), 2),
+                            round(max(min(self.controller.yaw, 1), -1), 2),
+                            round(max(min(self.controller.roll, 1), -1), 2),
+                            1 if self.controller.jump else -1,
+                            1 if self.controller.boost else -1,
+                            1 if self.controller.handbrake else -1
+                        ]))
+
                 if self.is_clear() or self.stack[0].__class__.__name__ not in {'Aerial', 'jump_shot', 'block_ground_shot', 'double_jump'}:
                     self.shooting = False
                     self.shot_weight = -1
                     self.shot_time = -1
+
+            if self.record and len(self.history_input) > 0 and not self.game.round_active:
+                if self.friend_scored:
+                    self.friend_scored = False
+                    self.print("Saving recording")
+                    num_files = len(os.listdir('C:\\Users\\minec\\GitHub\\VirxEAI\\training'))
+                    dir_name = f"C:\\Users\\minec\\GitHub\\VirxEAI\\training\\{self.index}_{num_files}"
+                    os.mkdir(dir_name)
+                    np.save(f"{dir_name}\\i.npy", np.asarray(self.history_input))
+                    np.save(f"{dir_name}\\o.npy", np.asarray(self.history_output))
+                    self.history_input = []
+                    self.history_output = []
+                    self.print(f"Saved to '{dir_name}'")
+                else:
+                    self.print("Wiping recording")
+                    self.history_input = []
+                    self.history_output = []
 
             return SimpleControllerState() if self.disable_driving else self.controller
         except Exception:
@@ -522,6 +597,10 @@ class Vector:
     x: float = 0
     y: float = 0
     z: float = 0
+
+    @property
+    def np(self):
+        return np.array(self.tuple())
 
     def __eq__(self, value):
         # Vector's can be compared with:
