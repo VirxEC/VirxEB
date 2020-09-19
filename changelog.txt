@@ -1,27 +1,4 @@
-Unlimited boost is now understood
-Adjustments for low gravity situations
-New enemy time to ball prediction (runs @ 10hz)
-The bot drives at 2300uus until it's within 2560uus of the ball (when shooting)
-Car turning/driving simulation (runs @ 30hz)
-Less overcommits when shadowing
-Fixed pathfinding when inside the net
-Fixed finding aerials via find_shot and find_any_shot
-Much better 1's play
-Fix sending 2 bots on the back left & back right kickoffs
-Removed the shot_valid method on everything except block_ground_shot
-Shots now update their ball information from the ball prediction struct
-Better corner kickoffs
-Added Rumble 'support'
-More accurate invalid shot tests
-Neutral/Offense is now determined by the minimum time to ball, instead of the distance
-New not-fast aerials that can hit the ball harder
-Double jumps are much more accurate
-Jump shots are also much more accurate
-Jump shots won't jump, if it's appropriate
-block_ground_shot will just get to the required destination asap
-face_target now has a non-air mode for low & high gravity situations
-New boost_down routine
-block_ground_shot should flip more often
-Offense = Neutral = ball > boost
-Grabbing boost will now not stop bc of distance to the target
-More accurate shot validation functions (order of execution mumble mumble...)
+jump_threshold is now based on the time remaining instead of the angle to the target
+'goal scored' is now ball_loc.y > 5212.75 (instead of 5212)
+The car now faces the target when in the middle of jumping during an aerial
+Better dribbles

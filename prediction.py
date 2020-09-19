@@ -54,7 +54,7 @@ class Prediction(Thread):
 
             ball_location = (ball_slice.physics.location.x, ball_slice.physics.location.y, ball_slice.physics.location.z)
 
-            if abs(ball_location[1]) > 5212:
+            if abs(ball_location[1]) > 5212.75:
                 break
 
             if ground:
@@ -141,11 +141,11 @@ class Prediction(Thread):
                         for ball_slice in self.agent.ball_prediction_struct.slices[30::12]:
                             location = ball_slice.physics.location.y * side
 
-                            if location >= 5212:
+                            if location >= 5212.75:
                                 is_own_goal = True
                                 break
 
-                            if location <= -5212:
+                            if location <= -5212.75:
                                 is_goal = True
                                 break
 
