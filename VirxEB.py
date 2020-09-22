@@ -1,4 +1,4 @@
-# from rlbot.utils.game_state_util import BallState, GameState, Physics, Vector3
+# from rlbot.utils.game_state_util import CarState, BallState, GameState, Physics, Vector3
 from rlbot.utils.structures.quick_chats import QuickChats
 
 from util.agent import Vector, VirxERLU, math
@@ -81,21 +81,23 @@ class VirxEB(VirxERLU):
             #     self.smart_shot(self.best_shot, cap=6)
             pass
         else:
-            if self.is_clear() and not self.me.airborne and (self.me.boost < 60 or not self.smart_shot(self.best_shot, cap=6)) and self.me.location.dist(self.debug_vector) > 250:
+            if self.is_clear() and not self.me.airborne and (self.me.boost < 60 or not self.smart_shot(self.best_shot, cap=6)) and self.me.location.flat_dist(self.debug_vector * side(self.team)) > 250:
                 self.push(face_target(ball=True))
-                self.push(goto(self.debug_vector * side(self.team), brake=True))
+                self.push(goto(self.debug_vector.flatten() * side(self.team), brake=True))
 
             if self.ball.location.z < 250 and not self.predictions['goal']:
                 ball_state = BallState(Physics(location=Vector3(0, -4096 * side(self.team), self.ball.location.z), velocity=Vector3(0, 0, 2000), angular_velocity=Vector3(0, 0, 0)))
-                game_state = GameState(ball=ball_state)
-                self.set_game_state(game_state)
+                self.set_game_state(GameState(ball=ball_state))
         """
         # Recovery testing
         """
-        self.dbg_2d(f"Has jump: {not self.me.jumped}")
-        self.dbg_2d(f"Has dodge: {not self.me.doublejumped}")
-        if self.is_clear():
-            self.push(boost_upwards() if self.me.location.z < 17.1 else ball_recovery())
+        if not self.me.airborne and self.me.velocity.magnitude() < 10:
+            cars = {
+                self.index: CarState(Physics(location=Vector3(0, 0, 17.1), velocity=Vector3(*self.debug_vector), angular_velocity=Vector3(0, 0, 0)))
+            }
+            self.set_game_state(GameState(cars=cars))
+        elif self.me.airborne and self.is_clear():
+            self.push(ball_recovery())
         """
         # Ceiling aerial testing
         """
@@ -263,6 +265,11 @@ class VirxEB(VirxERLU):
                     if self.shooting and self.shot_weight == -1:
                         self.clear()
                         self.backcheck()
+            elif quick_chat is QuickChats.Information_GoForIt:
+                if self.playstyle is self.playstyles.Neutral:
+                    if self.is_clear() and not self.shooting and self.me.boost >= 36:
+                        if not self.smart_shot():
+                            self.push(self.short_shot(self.foe_goal.location))
 
     def defend_ground(self):
         if self.shooting and not self.predictions['own_goal'] and self.ball.location.z * side(self.team) < 750:
@@ -314,12 +321,9 @@ class VirxEB(VirxERLU):
                         return
 
         if self.is_clear():
-            ball_loc = self.ball_prediction_struct.slices[self.future_ball_location_slice].physics.location
-            ball_loc = Vector(ball_loc.x, ball_loc.y, ball_loc.z)
-            if self.predictions['self_to_ball'] > 3840:
-                self.backcheck(clear_on_valid=True)
-            elif self.me.boost < 40 and ball_loc.y * side(self.team) < -1280 and not self.predictions['goal'] and ball_loc.flat_dist(self.foe_goal.location) > 1280:
+            if self.me.boost < 36:
                 self.goto_nearest_boost()
+                return
 
             if self.is_clear():
                 self.backcheck()
@@ -347,9 +351,6 @@ class VirxEB(VirxERLU):
 
                 if self.me.location.y * side(self.team) > self.ball.location.y * side(self.team) and self.smart_shot(cap=2):
                     return
-
-        if self.is_clear():
-            self.backcheck()
 
     def neutral_air(self):
         if self.odd_tick % 2 == 0 and (self.can_shoot is None or self.predictions['own_goal']):
@@ -420,10 +421,11 @@ class VirxEB(VirxERLU):
                         if self.me.location.y * side(self.team) > self.ball.location.y * side(self.team) and self.smart_shot(cap=3):
                             return
 
-            if self.is_clear() and self.me.boost < 24:
-                self.goto_nearest_boost(only_small=self.predictions['team_to_ball'][1] > 2560)
-
             if self.is_clear():
+                if self.me.boost < 24:
+                    self.goto_nearest_boost()
+
+                self.send_quick_chat(QuickChats.CHAT_EVERYONE, QuickChats.Information_GoForIt)
                 self.backcheck()
         elif self.odd_tick % 2 == 0 and self.shooting and (self.can_shoot is None or self.predictions['own_goal']):
             if self.predictions['goal'] or (self.foe_goal.location.dist(self.ball.location) <= 1500 and (self.predictions['closest_enemy'] > 1400 or self.foe_goal.location.dist(self.me.location) < self.predictions['closest_enemy'] + 250)):
@@ -487,6 +489,7 @@ class VirxEB(VirxERLU):
 
         if (self.is_clear() or not self.shooting) and self.odd_tick == 0:
             if not self.smart_shot(self.best_shot, cap=4 if self.can_shoot is None else 1) and (self.can_shoot is not None or not self.smart_shot(self.offensive_shots[0], cap=3)) and self.is_clear() and self.ball.location.y * side(self.team) > self.me.location.y - 250:
+                self.send_quick_chat(QuickChats.CHAT_EVERYONE, QuickChats.Information_GoForIt)
                 self.backcheck()
 
     def attack_air(self):
@@ -521,6 +524,9 @@ class VirxEB(VirxERLU):
                 self.clear()
 
             self.push(boost_down())
+        elif self.is_clear():
+            self.send_quick_chat(QuickChats.CHAT_EVERYONE, QuickChats.Information_GoForIt)
+            self.backcheck()
 
     def get_shot(self, target=None, weight=None, cap=None):
         if self.can_shoot is None or self.predictions['own_goal'] or (self.playstyle is self.playstyles.Neutral and target is self.best_shot):
@@ -609,17 +615,20 @@ class VirxEB(VirxERLU):
             return almost_equals(pair[0], self.me.location.x, 50) and almost_equals(pair[1], abs(self.me.location.y), 50)
 
         if kickoff_check(back):
-            self.push(back_kickoff())
+            if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default":
+                self.push(generic_kickoff())
+            else:
+                self.push(back_kickoff())
         elif kickoff_check(left):
-            if almost_equals(-self.gravity.z, 650, 50):
+            if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default":
+                self.push(generic_kickoff())
+            else:
                 self.push(corner_kickoff(-1))
-            else:
-                self.push(generic_kickoff())
         elif kickoff_check(right):
-            if almost_equals(-self.gravity.z, 650, 50):
-                self.push(corner_kickoff(1))
-            else:
+            if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default":
                 self.push(generic_kickoff())
+            else:
+                self.push(corner_kickoff(1))
         elif kickoff_check(back_left) or kickoff_check(back_right):
             self.push(generic_kickoff())
         else:

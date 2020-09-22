@@ -1,4 +1,6 @@
-jump_threshold is now based on the time remaining instead of the angle to the target
-'goal scored' is now ball_loc.y > 5212.75 (instead of 5212)
-The car now faces the target when in the middle of jumping during an aerial
-Better dribbles
+jump_shot hits the ball much harder
+removed the atba routine (just use short_shot)
+better short_shot
+better braking in the retreat routine
+better offensive rotations
+wall recoveries

@@ -406,7 +406,7 @@ def get_slices(agent, cap_, weight=None, start_slice=12):
         cap_ = min(agent.predictions['enemy_time_to_ball'] + 0.1 - agent.time, cap_)
 
     # If we're shooting, crop the struct
-    if agent.shooting:
+    if agent.shooting and agent.shot_weight != -1:
         # Get the time remaining
         time_remaining = agent.stack[0].intercept_time - agent.time
 
