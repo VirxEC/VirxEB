@@ -3,18 +3,16 @@ from __future__ import annotations
 import itertools
 import math
 import os
-import numpy as np
-from time import time_ns
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
+from time import time_ns
 from traceback import print_exc
 from typing import List, Tuple
 
-from rlbot.agents.base_agent import BaseAgent, SimpleControllerState
-
 from gui import Gui
 from match_comms import MatchComms
-from prediction import Prediction
+from rlbot.agents.base_agent import BaseAgent, SimpleControllerState
 
 
 class Playstyle(Enum):
@@ -26,16 +24,8 @@ class Playstyle(Enum):
 class VirxERLU(BaseAgent):
     # Massive thanks to ddthj/GoslingAgent (GitHub repo) for the basis of VirxERLU
     def initialize_agent(self):
-        self.tournament = False
+        self.tournament = True
         self.startup_time = time_ns()
-
-        self.record = False
-
-        if self.record:
-            self.n = (100, 10845, 1, 11988, 11988, 1, 1, 10845, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044, 4096, 5120, 2044)
-            self.inf_arr = (0, 0, -1e+4)
-            self.history_input = []
-            self.history_output = []
 
         self.debug = [[], []]
         self.debugging = not self.tournament
@@ -51,7 +41,16 @@ class VirxERLU(BaseAgent):
         self.goalie = False
         self.jump = True
         self.double_jump = True
+        self.ground_shot = True
         self.aerials = True
+
+        T = datetime.now()
+        T = T.strftime("%Y-%m-%d %H;%M")
+
+        self.traceback_file = (
+            os.getcwd(),
+            f"-traceback ({T}).txt"
+        )
 
         if not self.tournament:
             self.gui = Gui(self)
@@ -67,14 +66,13 @@ class VirxERLU(BaseAgent):
             "self_from_goal": 0,
             "self_to_ball": 0,
             "was_down": False,
-            "enemy_time_to_ball": 0,
-            "done": False
+            "enemy_time_to_ball": 0
         }
 
-        self.prediction = Prediction(self)
-        self.print("Starting the predictive service...")
-        self.prediction.start()
-        self.match_comms = None
+        self.match_comms = MatchComms(self)
+        self.print("Starting the match communication handler...")
+        self.match_comms.start()
+        
         self.ball_prediction_struct = None
 
         self.print("Building game information")
@@ -121,7 +119,6 @@ class VirxERLU(BaseAgent):
 
         self.friend_goal = goal_object(self.team)
         self.foe_goal = goal_object(not self.team)
-        self.friend_scored = False
 
         self.stack = []
         self.time = 0
@@ -150,14 +147,11 @@ class VirxERLU(BaseAgent):
         if not self.tournament:
             self.gui.stop()
 
-        if self.match_comms is not None:
-            self.match_comms.stop()
-
-        self.prediction.stop()
+        self.match_comms.stop()
 
     @staticmethod
     def is_hot_reload_enabled():
-        # The tkinter GUI isn't compatible with hot reloading
+        # The threads that VirxERLU uses aren't compatible with hot reloading
         # Use the Continue and Spawn option in the GUI instead
         return False
 
@@ -172,24 +166,19 @@ class VirxERLU(BaseAgent):
 
         self.init()
 
-        self.ready = True
-
         load_time = (time_ns() - self.startup_time) / 1e+6
         print(f"{self.name}: Built game info in {load_time} milliseconds")
 
-        if self.name in {"VirxEB", "ABot", "VirxEB-dev", "ABot-dev", "VirxEAI", "VirxEAI-dev", "Dragon", "ElonMB", "VirxE B"}:
+        if self.name in {"VirxEB", "ABot", "VirxEB-dev", "ABot-dev"}:
             print(f"{self.name}: Check me out at https://www.virxcase.dev!!!")
+
+        self.ready = True
 
     def refresh_player_lists(self, packet):
         # Useful to keep separate from get_ready because humans can join/leave a match
         self.friends = tuple(car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team is self.team and i != self.index)
         self.foes = tuple(car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team != self.team)
         self.me = car_object(self.index, packet)
-
-        if len(self.friends) > 0 and self.match_comms is None:
-            self.match_comms = MatchComms(self)
-            self.print("Starting the match communication handler...")
-            self.match_comms.start()
 
     def push(self, routine):
         self.stack.append(routine)
@@ -235,16 +224,12 @@ class VirxERLU(BaseAgent):
         set(map(lambda car: car.update(packet), self.foes))
         set(map(lambda pad: pad.update(packet), self.boosts))
 
-        prev_goals = self.game.friend_score + 0
-
         self.ball.update(packet)
         self.me.update(packet)
         self.game.update(self.team, packet)
+
         self.time = self.game.time
         self.gravity = self.game.gravity
-
-        if not self.friend_scored and self.game.friend_score > prev_goals:
-            self.friend_scored = True
 
         # When a new kickoff begins we empty the stack
         if not self.kickoff_flag and self.game.round_active and self.game.kickoff:
@@ -253,6 +238,7 @@ class VirxERLU(BaseAgent):
 
         # Tells us when to go for kickoff
         self.kickoff_flag = self.game.round_active and self.game.kickoff
+
         self.ball_to_goal = self.friend_goal.location.flat_dist(self.ball.location)
 
         self.odd_tick += 1
@@ -261,7 +247,6 @@ class VirxERLU(BaseAgent):
             self.odd_tick = 0
 
         self.ball_prediction_struct = self.get_ball_prediction_struct()
-        self.prediction.event.set()
 
     def get_output(self, packet):
         try:
@@ -277,16 +262,31 @@ class VirxERLU(BaseAgent):
             if self.me.demolished:
                 if not self.is_clear():
                     self.clear()
-            elif self.game.round_active and self.predictions['done']:
+            elif self.game.round_active:
                 self.dbg_3d(self.playstyle.name)
                 try:
                     self.run()  # Run strategy code; This is a very expensive function to run
                 except Exception:
-                    print(self.name)
-                    print_exc()
+                    t_file = os.path.join(self.traceback_file[0], self.name+self.traceback_file[1])
+                    print(f"ERROR in {self.name}; see '{t_file}'")
+                    print_exc(file=open(t_file, "a"))
 
-                self.dbg_2d(f"Predicted enemy time to ball: {round(self.predictions['enemy_time_to_ball'] - self.time, 1)}")
+                # run the routine on the end of the stack
+                if not self.is_clear():
+                    try:
+                        r_name = self.stack[-1].__class__.__name__
+                        self.stack[-1].run(self)
+                    except Exception:
+                        t_file = os.path.join(self.traceback_file[0], r_name+self.traceback_file[1])
+                        print(f"ERROR in {self.name}'s {r_name} routine; see '{t_file}'")
+                        print_exc(file=open(t_file, "a"))
 
+                if self.is_clear() or self.stack[0].__class__.__name__ not in {'Aerial', 'jump_shot', 'block_ground_shot', 'double_jump', 'short_shot', 'ground_shot'}:
+                    self.shooting = False
+                    self.shot_weight = -1
+                    self.shot_time = -1
+
+                # This is a ton of debugging stuff
                 if self.debugging:
                     if self.debug_3d_bool:
                         if self.debug_stack_bool:
@@ -300,7 +300,7 @@ class VirxERLU(BaseAgent):
                         if self.show_coords:
                             self.debug[1].insert(0, str(self.me.location.int()))
 
-                        if not self.is_clear() and self.stack[0].__class__.__name__ in {'Aerial', 'jump_shot', 'block_ground_shot', 'double_jump'}:
+                        if not self.is_clear() and self.stack[0].__class__.__name__ in {'Aerial', 'jump_shot', 'ground_shot', 'double_jump'}:
                             self.dbg_2d(round(self.stack[0].intercept_time - self.time, 4))
 
                         self.renderer.draw_string_2d(20, 300, 2, 2, "\n".join(self.debug[1]), self.renderer.team_color(alt_color=True))
@@ -311,88 +311,11 @@ class VirxERLU(BaseAgent):
                 else:
                     self.debug = [[], []]
 
-                # run the routine on the end of the stack
-                if not self.is_clear():
-                    self.stack[-1].run(self)
-
-                    if self.odd_tick == 0 and self.record:
-                        try:
-                            closest_foe_to_ball = min((foe for foe in self.foes if not foe.demolished), key=lambda f: f.location.dist(self.me.ball.location))
-                        except Exception:
-                            closest_foe_to_ball = None
-
-                        try:
-                            closest_friend_to_net = min((friend for friend in self.friends if not friend.demolished), key=lambda f: f.location.dist(self.friend_goal.location))
-                        except Exception:
-                            closest_friend_to_net = None
-
-                        try:
-                            closest_friend_to_ball = min((friend for friend in self.friends if not friend.demolished), key=lambda f: f.location.dist(self.ball.location))
-                        except Exception:
-                            closest_friend_to_ball = None
-
-
-                        self.history_input.append(np.array([
-                            self.me.boost,
-                            self.ball_to_goal,  # 2
-                            1 if self.me.airborne else -1,
-                            self.predictions['self_to_ball'],  #4
-                            self.predictions['self_from_goal'], 
-                            1 if self.predictions['goal'] else -1,  # 6
-                            1 if self.predictions['own_goal'] else -1,
-                            self.ball.location.dist(self.foe_goal.location),  # 8
-                            *self.me.location.int(),
-                            *self.me.local_velocity().int(),  # 14
-                            *self.me.local_location(self.ball.location).int(),
-                            *self.me.local_velocity(self.ball.velocity).int(),  # 20
-                            *(self.me.local_location(closest_foe_to_ball.location).int() if closest_foe_to_ball is not None else self.inf_arr),
-                            *(self.me.local_velocity(closest_foe_to_ball.velocity).int() if closest_foe_to_ball is not None else self.inf_arr),  # 26
-                            *(self.me.local_location(closest_friend_to_net.location).int() if closest_friend_to_net is not None else self.inf_arr),
-                            *(self.me.local_velocity(closest_friend_to_net.velocity).int() if closest_friend_to_net is not None else self.inf_arr),  # 32
-                            *(self.me.local_location(closest_friend_to_ball.location).int() if closest_friend_to_ball is not None else self.inf_arr),
-                            *(self.me.local_velocity(closest_friend_to_ball.velocity).int() if closest_friend_to_ball is not None else self.inf_arr),  # 38
-                        ]))
-
-                        for y in range(len(self.history_input[-1])):
-                            self.history_input[-1][y] /= self.n[y]
-
-                        self.history_output.append(np.array([
-                            round(max(min(self.controller.throttle, 1), -1), 2),
-                            round(max(min(self.controller.steer, 1), -1), 2),
-                            round(max(min(self.controller.pitch, 1), -1), 2),
-                            round(max(min(self.controller.yaw, 1), -1), 2),
-                            round(max(min(self.controller.roll, 1), -1), 2),
-                            1 if self.controller.jump else -1,
-                            1 if self.controller.boost else -1,
-                            1 if self.controller.handbrake else -1
-                        ]))
-
-                if self.is_clear() or self.stack[0].__class__.__name__ not in {'Aerial', 'jump_shot', 'block_ground_shot', 'double_jump'}:
-                    self.shooting = False
-                    self.shot_weight = -1
-                    self.shot_time = -1
-
-            if self.record and len(self.history_input) > 0 and not self.game.round_active:
-                if self.friend_scored:
-                    self.friend_scored = False
-                    self.print("Saving recording")
-                    num_files = len(os.listdir('C:\\Users\\minec\\GitHub\\VirxEAI\\training'))
-                    dir_name = f"C:\\Users\\minec\\GitHub\\VirxEAI\\training\\{self.index}_{num_files}"
-                    os.mkdir(dir_name)
-                    np.save(f"{dir_name}\\i.npy", np.asarray(self.history_input))
-                    np.save(f"{dir_name}\\o.npy", np.asarray(self.history_output))
-                    self.history_input = []
-                    self.history_output = []
-                    self.print(f"Saved to '{dir_name}'")
-                else:
-                    self.print("Wiping recording")
-                    self.history_input = []
-                    self.history_output = []
-
             return SimpleControllerState() if self.disable_driving else self.controller
         except Exception:
-            print(self.name)
-            print_exc()
+            t_file = os.path.join(self.traceback_file[0], "VirxERLU"+self.traceback_file[1])
+            print(f"ERROR with VirxERLU in {self.name}; see '{t_file}' and please report the bug at 'https://github.com/VirxEC/VirxERLU/issues'")
+            print_exc(file=open(t_file, "a"))
             return SimpleControllerState()
 
     def handle_match_comm(self, msg):
@@ -494,6 +417,9 @@ class hitbox_object:
 
     def __getitem__(self, index):
         return (self.length, self.width, self.height)[index]
+
+    def tuple(self):
+    	return (self.length, self.width, self.height)
 
 
 class ball_object:
@@ -597,10 +523,6 @@ class Vector:
     x: float = 0
     y: float = 0
     z: float = 0
-
-    @property
-    def np(self):
-        return np.array(self.tuple())
 
     def __eq__(self, value):
         # Vector's can be compared with:
@@ -743,3 +665,7 @@ class Vector:
     def cap(self, low: float, high: float) -> Vector:
         # Caps all values in a Vector between 'low' and 'high'
         return Vector(*(max(min(item, high), low) for item in self.tuple()))
+
+    def midpoint(self, value: Vector) -> Vector:
+        # Midpoint of the 2 vectors
+        return (self + value) / 2

@@ -1,6 +1,24 @@
-jump_shot hits the ball much harder
+jump_shot sometimes hits the ball much harder
 removed the atba routine (just use short_shot)
 better short_shot
 better braking in the retreat routine
 better offensive rotations
 wall recoveries
+better adjustment system for jump_shot and double_jump
+on-the-fly shot vector calculations
+there's now the potential for more time to be allocated towards taking a shot
+double_jump sometimes hits the ball much harder
+jump_shot has more accurate jumps
+fixed braking in the goto routine
+errors are now printed to a traceback file(s)
+pathfinding will do flips when they need to cover a large distance
+removed dribbles from jump_shot
+added new routine 'ground_shot'
+defaultThrottle can now handle handbrake with defaultPD's target_angles
+new util `defaultDrive` - it combines defaultPD and defaultThrottle, with the ability to drive backwards
+moved the prediction thread to the main thread
+more aggressive 1's play
+improved corner kickoff
+much better at when to go for large boosts
+if VirxEB is already flying, then the minimum aerial height is now 140
+much better shadowing

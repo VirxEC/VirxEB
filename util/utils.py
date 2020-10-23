@@ -20,6 +20,7 @@ def cap(x, low, high):
 def defaultPD(agent, local_target, upside_down=False, up=None):
     # points the car towards a given local target.
     # Direction can be changed to allow the car to steer towards a target while driving backwards
+
     if up is None:
         up = agent.me.local(Vector(z=-1 if upside_down else 1))  # where "up" is in local coordinates
     target_angles = (
@@ -36,13 +37,38 @@ def defaultPD(agent, local_target, upside_down=False, up=None):
     return target_angles
 
 
-def defaultThrottle(agent, target_speed):
+def defaultThrottle(agent, target_speed, target_angles=None):
     # accelerates the car to a desired speed using throttle and boost
     car_speed = agent.me.local_velocity().x
     t = target_speed - car_speed
-    agent.controller.throttle = cap((t**2) * sign(t)/1000, -1, 1)
-    agent.controller.boost = (t > 150 or (target_speed > 1400 and t > agent.boost_accel / 30)) and agent.controller.throttle == 1 and (agent.me.airborne or (abs(agent.controller.steer) < 0.25 and not agent.me.airborne))
+
+    if not agent.me.airborne:
+        angle_to_target = abs(target_angles[1])
+        if target_angles is not None:
+            agent.controller.handbrake = not agent.me.airborne and ((angle_to_target > 1.54) if sign(car_speed) == 1 else (angle_to_target < 1.6)) and agent.me.velocity.magnitude() > 150
+
+        if agent.controller.handbrake:
+            if car_speed < 900:
+                agent.controller.throttle = sign(t)
+                agent.controller.steer = sign(agent.controller.steer)
+            else:
+                agent.controller.throttle = -sign(car_speed)
+                agent.controller.handbrake = False
+        else:
+            agent.controller.throttle = cap((t**2) * sign(t)/1000, -1, 1)
+            agent.controller.boost = (t > 150 or (target_speed > 1400 and t > agent.boost_accel / 30)) and agent.controller.throttle > 0.9 and angle_to_target < 0.5
+
     return car_speed
+
+
+def defaultDrive(agent, target_speed, local_target):
+    if target_speed < 0:
+        local_target *= -1
+
+    target_angles = defaultPD(agent, local_target)
+    velocity = defaultThrottle(agent, target_speed, target_angles)
+
+    return target_angles, velocity
 
 
 def in_field(point, radius):
@@ -91,7 +117,10 @@ def quadratic(a, b, c):
     if a == 0:
         return -1, -1
 
-    return (-b + inside)/(2*a), (-b - inside)/(2*a)
+    b = -b
+    a = 2*a
+
+    return (b + inside)/a, (b - inside)/a
 
 
 def shot_valid(agent, shot, target=None):
@@ -125,9 +154,7 @@ def shot_valid(agent, shot, target=None):
 
 def side(x):
     # returns -1 for blue team and 1 for orange team
-    if x == 0:
-        return -1
-    return 1
+    return (-1, 1)[x]
 
 
 def sign(x):
@@ -157,7 +184,7 @@ def invlerp(a, b, v):
     # Inverse linear interpolation from a to b with value v
     # For instance, it returns 0 if v is a, and returns 1 if v is b, and returns 0.5 if v is exactly between a and b
     # Works for both numbers and Vectors
-    return (v - a)/(b - a)
+    return (v - a) / (b - a)
 
 
 def send_comm(agent, msg):
@@ -168,7 +195,7 @@ def send_comm(agent, msg):
     msg.update(message)
     try:
         agent.matchcomms.outgoing_broadcast.put_nowait({
-            "VirxEB": msg
+            "VirxERLU": msg
         })
     except Full:
         agent.print("Outgoing broadcast is full; couldn't send message")

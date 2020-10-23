@@ -17,7 +17,7 @@ class Gui(Thread):
 
         root.title("VirxEC/VirxERLU")
 
-        root.geometry("255x400")
+        root.geometry("255x425")
 
         title = ttk.Label(root, text=f"{self.agent.name} hosted by VirxERLU")
         title.pack()
@@ -68,6 +68,17 @@ class Gui(Thread):
 
         jump_btn = ttk.Checkbutton(root, text='Jump shot', variable=jump_bool, command=set_jump)
         jump_btn.pack()
+
+        # Ground shot
+
+        ground_shot_bool = BooleanVar()
+        ground_shot_bool.set(self.agent.ground_shot)
+
+        def set_ground_shot():
+            self.agent.ground_shot = ground_shot_bool.get()
+
+        ground_shot_btn = ttk.Checkbutton(root, text='Ground shot', variable=ground_shot_bool, command=set_ground_shot)
+        ground_shot_btn.pack()
 
         # Disable driving
 
