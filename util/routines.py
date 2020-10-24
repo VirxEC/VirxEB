@@ -555,7 +555,7 @@ class shadow:
         else:
             target.x = (abs(ball_loc.x) + 320) * sign(ball_loc.x)
 
-        return target
+        return Vector(cap(target.x, -4096, 4096), cap(target.y, -5120, 5120))
 
 
 class retreat:
