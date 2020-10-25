@@ -231,7 +231,7 @@ def get_slices(agent, cap_, weight=None, start_slice=12):
     ball_y = agent.ball.location.y * side(agent.team)
     foes = tuple(foe for foe in agent.foes if not foe.demolished and foe.location.y * side(agent.team) < ball_y)
     if not agent.predictions['goal'] and not agent.predictions['own_goal'] and agent.ball_to_goal > 2560 and agent.ball.location.dist(agent.foe_goal.location) > 900 and len(foes) > 0:
-        cap_ = min(agent.predictions['enemy_time_to_ball'], cap_)
+        cap_ = min(agent.predictions['enemy_time_to_ball'] * 1.15, cap_)
 
     # If we're shooting, crop the struct
     if agent.shooting and agent.shot_weight != -1:

@@ -205,7 +205,7 @@ class VirxEB(VirxERLU):
             self_dist = self.ball.location.flat_dist(self.me.location)
             if len(foe_distances) > 0:
                 if self.odd_tick % 2 == 0:
-                    self.predictions['enemy_time_to_ball'] = min(tuple(self.time_to_ball(foe) for foe in self.foes)) * 1.15
+                    self.predictions['enemy_time_to_ball'] = min(tuple(self.time_to_ball(foe) for foe in self.foes))
 
                 self.predictions['closest_enemy'] = min(foe_distances)
             else:
@@ -239,8 +239,8 @@ class VirxEB(VirxERLU):
 
                 if ball_loc_y < 2560:
                     # If we're down or up by 2 goals in 2's, then start playing more defensive
-                    self_time_to_ball = self.time_to_ball(self.me) * 1.1
-                    team_time_to_ball = min(tuple(self.time_to_ball(teammate) for teammate in self.friends)) * 1.1
+                    self_time_to_ball = self.time_to_ball(self.me) * 1.05
+                    team_time_to_ball = min(tuple(self.time_to_ball(teammate) for teammate in self.friends)) * 1.05
                     if ball_loc_y < -1280 and self_time_to_ball < team_time_to_ball and self.predictions['self_from_goal'] != self.predictions["team_from_goal"][0]:
                         self.playstyle = self.playstyles.Offensive if len_friends > 1 or (len_friends == 1 and (self.predictions['was_down'] or abs(self.game.friend_score - self.game.foe_score) <= 1)) else self.playstyles.Neutral
                     elif self.predictions['self_from_goal'] == self.predictions["team_from_goal"][0]:
@@ -250,7 +250,7 @@ class VirxEB(VirxERLU):
                 else:
                     self.playstyle = self.playstyles.Defensive
             else:
-                self_time_to_ball = self.time_to_ball(self.me) * 1.1
+                self_time_to_ball = self.time_to_ball(self.me) * 1.05
 
                 if self.ball.location.y * side(self.team) < 640:
                     self.playstyle = self.playstyles.Offensive if self_time_to_ball < self.predictions['enemy_time_to_ball'] else self.playstyles.Neutral

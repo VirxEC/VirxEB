@@ -523,7 +523,7 @@ class shadow:
             self.goto.run(agent)
 
     def get_ball_loc(self, agent, render=False):
-        ball_slice = agent.ball_prediction_struct.slices[cap(math.ceil(agent.predictions['enemy_time_to_ball']) * 60, 0, len(agent.ball_prediction_struct.slices) - 1)].physics.location
+        ball_slice = agent.ball_prediction_struct.slices[cap(math.ceil(agent.predictions['enemy_time_to_ball'] * 0.99) * 60, 0, len(agent.ball_prediction_struct.slices) - 1)].physics.location
         ball_loc = Vector(ball_slice.x, ball_slice.y)
         if render: agent.line(ball_loc, ball_loc + Vector(z=185), agent.renderer.white())
         ball_loc.y *= side(agent.team)
