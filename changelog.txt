@@ -38,6 +38,5 @@ new util methods dodge_impulse, turn radius, curvature, and is_inside_turn_radiu
 better shadowing
 removed int method from the Vector class in favor of doing round(Vector)
 improved the strategy
-fixed flips
 better boost management
 better wave dashes
