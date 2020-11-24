@@ -3,18 +3,16 @@ from queue import Full
 from util.agent import math, Vector
 
 
-def backsolve(target, car, time, gravity):
-    # Finds the acceleration required for a car to reach a target in a specific amount of time
-    d = target - car.location
-    dvx = ((d.x/time) - car.velocity.x) / time
-    dvy = ((d.y/time) - car.velocity.y) / time
-    dvz = (((d.z/time) - car.velocity.z) / time) - (gravity.z * time)
-    return Vector(dvx, dvy, dvz)
-
-
 def cap(x, low, high):
     # caps/clamps a number between a low and high value
     return max(min(x, high), low)
+
+
+def cap_in_field(agent, target):
+    target.x = cap(target.x, -850, 850) if abs(agent.me.location.y) > 5120 - (agent.me.hitbox.length / 2) else cap(target.x, -4050, 4050)
+    target.y = cap(target.y, -5120, 5120)
+
+    return target
 
 
 def defaultPD(agent, local_target, upside_down=False, up=None):
@@ -37,38 +35,73 @@ def defaultPD(agent, local_target, upside_down=False, up=None):
     return target_angles
 
 
-def defaultThrottle(agent, target_speed, target_angles=None):
+def defaultThrottle(agent, target_speed, target_angles=None, local_target=None):
     # accelerates the car to a desired speed using throttle and boost
     car_speed = agent.me.local_velocity().x
-    t = target_speed - car_speed
 
     if not agent.me.airborne:
-        angle_to_target = abs(target_angles[1])
-        if target_angles is not None:
-            agent.controller.handbrake = not agent.me.airborne and ((angle_to_target > 1.54) if sign(car_speed) == 1 else (angle_to_target < 1.6)) and agent.me.velocity.magnitude() > 150
+        if target_angles is not None and local_target is not None:
+            turn_rad = turn_radius(abs(car_speed))
+            agent.controller.handbrake = not agent.me.airborne and agent.me.velocity.magnitude() > 150 and (is_inside_turn_radius(turn_rad, local_target, sign(agent.controller.steer)) if abs(local_target.y) < turn_rad else abs(local_target.x) < turn_rad)
 
+        angle_to_target = abs(target_angles[1])
         if agent.controller.handbrake:
-            if car_speed < 900:
-                agent.controller.throttle = sign(t)
+            if ((angle_to_target > 2.8) if sign(car_speed) == 1 else (angle_to_target < 0.34)):
+                if abs(target_speed) > 950: target_speed = 950 * sign(target_speed)
                 agent.controller.steer = sign(agent.controller.steer)
-            else:
-                agent.controller.throttle = -sign(car_speed)
                 agent.controller.handbrake = False
-        else:
-            agent.controller.throttle = cap((t**2) * sign(t)/1000, -1, 1)
-            agent.controller.boost = (t > 150 or (target_speed > 1400 and t > agent.boost_accel / 30)) and agent.controller.throttle > 0.9 and angle_to_target < 0.5
+            else:
+                agent.controller.steer = agent.controller.yaw
+
+        t = target_speed - car_speed
+        agent.controller.throttle = cap((t**2) * sign(t)/1000, -1, 1)
+
+        if not agent.controller.handbrake:
+            agent.controller.boost = (t > 150 or (target_speed > 1410 and t > agent.boost_accel / 30)) and agent.controller.throttle > 0.9 and angle_to_target < 0.5
 
     return car_speed
 
 
 def defaultDrive(agent, target_speed, local_target):
     if target_speed < 0:
-        local_target *= -1
+        local_target.y *= -1
 
     target_angles = defaultPD(agent, local_target)
-    velocity = defaultThrottle(agent, target_speed, target_angles)
+    if target_speed != 0:
+        velocity = defaultThrottle(agent, target_speed, target_angles, local_target)
 
     return target_angles, velocity
+
+
+def is_inside_turn_radius(turn_rad, local_target, steer_direction):
+    # turn_rad is the turn radius
+    local_target = local_target.flatten()
+    circle = Vector(y=-steer_direction * turn_rad)
+
+    return circle.dist(local_target) < turn_rad
+
+
+def turn_radius(v):
+    # v is the magnitude of the velocity in the car's forward direction
+    if v == 0:
+        return 0
+    return 1.0 / curvature(v)
+
+
+def curvature(v):
+    # v is the magnitude of the velocity in the car's forward direction
+    if 0 <= v < 500:
+        return 0.0069 - 5.84e-6 * v
+    elif 500 <= v < 1000:
+        return 0.00561 - 3.26e-6 * v
+    elif 1000 <= v < 1500:
+        return 0.0043 - 1.95e-6 * v
+    elif 1500 <= v < 1750:
+        return 0.003025 - 1.1e-6 * v
+    elif 1750 <= v < 2500:
+        return 0.0018 - 0.4e-6 * v
+    else:
+        return 0
 
 
 def in_field(point, radius):
@@ -91,20 +124,6 @@ def find_slope(shot_vector, car_to_target):
     return cap(f, -3, 3)
 
 
-def post_correction(ball_location, left_target, right_target):
-    # this function returns target locations that are corrected to account for the ball's radius
-    # If the left and right post swap sides, a goal cannot be scored
-    # We purposely make this a bit larger so that our shots have a higher chance of success
-    ball_radius = 120
-    goal_line_perp = (right_target - left_target).cross(Vector(z=1))
-    left = left_target + ((left_target - ball_location).normalize().cross(Vector(z=-1))*ball_radius)
-    right = right_target + ((right_target - ball_location).normalize().cross(Vector(z=1))*ball_radius)
-    left = left_target if (left-left_target).dot(goal_line_perp) > 0 else left
-    right = right_target if (right-right_target).dot(goal_line_perp) > 0 else right
-    swapped = (left - ball_location).normalize().cross(Vector(z=1)).dot((right - ball_location).normalize()) > -0.1
-    return left, right, swapped
-
-
 def quadratic(a, b, c):
     # Returns the two roots of a quadratic
     inside = (b*b) - (4*a*c)
@@ -121,35 +140,6 @@ def quadratic(a, b, c):
     a = 2*a
 
     return (b + inside)/a, (b - inside)/a
-
-
-def shot_valid(agent, shot, target=None):
-    # Returns True if the ball is still where the shot anticipates it to be
-    if target is None:
-        target = shot.ball_location
-
-    threshold = agent.best_shot_value * 2
-
-    # First finds the two closest slices in the ball prediction to shot's intercept_time
-    # threshold controls the tolerance we allow the ball to be off by
-    slices = agent.ball_prediction_struct.slices
-    soonest = 0
-    latest = len(slices)-1
-    while len(slices[soonest:latest+1]) > 2:
-        midpoint = (soonest+latest) // 2
-        if slices[midpoint].game_seconds > shot.intercept_time:
-            latest = midpoint
-        else:
-            soonest = midpoint
-    # preparing to interpolate between the selected slices
-    dt = slices[latest].game_seconds - slices[soonest].game_seconds
-    time_from_soonest = shot.intercept_time - slices[soonest].game_seconds
-    soonest = (slices[soonest].physics.location.x, slices[soonest].physics.location.y, slices[soonest].physics.location.z)
-    slopes = (Vector(slices[latest].physics.location.x, slices[latest].physics.location.y, slices[latest].physics.location.z) - Vector(*soonest)) * (1/dt)
-    # Determining exactly where the ball will be at the given shot's intercept_time
-    predicted_ball_location = Vector(*soonest) + (slopes * time_from_soonest)
-    # Comparing predicted location with where the shot expects the ball to be
-    return target.dist(predicted_ball_location) < threshold
 
 
 def side(x):
@@ -209,16 +199,12 @@ def get_weight(agent, shot=None, index=None):
         if shot is agent.best_shot:
             return agent.max_shot_weight + 1
 
-        if shot in agent.panic_shots:
-            return agent.max_shot_weight
+        if shot is agent.anti_shot:
+            return agent.max_shot_weight - 1
 
-        for shot_list in (agent.offensive_shots, agent.defensive_shots):
-            try:
-                return agent.max_shot_weight - math.ceil(shot_list.index(shot) / 2)
-            except ValueError:
-                continue
+        return agent.max_shot_weight - math.ceil(agent.defensive_shots.index(shot) / 2)
 
-    return agent.max_shot_weight - 1
+    return agent.max_shot_weight - 2
 
 
 def peek_generator(generator):
@@ -247,6 +233,19 @@ def point_inside_quadrilateral_2d(point, quadrilateral):
     return almost_equals(actual_area, quadrilateral_area, 0.001)
 
 
+def perimeter_of_ellipse(a,b):
+    return math.pi * (3*(a+b) - math.sqrt((3*a + b) * (a + 3*b)))
+
+
+def dodge_impulse(agent):
+    car_speed = agent.me.velocity.magnitude()
+    impulse = 500 * (1 + 0.9 * (car_speed / 2300))
+    dif = car_speed + impulse - 2300
+    if dif > 0:
+        impulse -= dif
+    return impulse
+
+
 def valid_ceiling_shot(agent, cap_=5):
     struct = agent.ball_prediction_struct
 
@@ -254,22 +253,22 @@ def valid_ceiling_shot(agent, cap_=5):
         return
 
     end_slice = math.ceil(cap_ * 60)
-    slices = struct.slices[120:end_slice:2]
+    slices = struct.slices[30:end_slice:2]
 
     if agent.me.location.x * side(agent.team) > 0:
         quadrilateral = (
-            agent.foe_goal.right_post.flatten().int(),
-            agent.foe_goal.left_post.flatten().int()
+            round(agent.foe_goal.right_post.flatten()),
+            round(agent.foe_goal.left_post.flatten())
         )
     else:
         quadrilateral = (
-            agent.foe_goal.left_post.flatten().int(),
-            agent.foe_goal.right_post.flatten().int()
+            round(agent.foe_goal.left_post.flatten()),
+            round(agent.foe_goal.right_post.flatten())
         )
 
     quadrilateral += (
         Vector(0, 640),
-        Vector(agent.me.location.x - (200 * sign(agent.me.location.x)), agent.me.location.y - (200 * side(agent.team))).int(),
+        Vector(round(agent.me.location.x - (200 * sign(agent.me.location.x))), round(agent.me.location.y - (200 * side(agent.team)))),
     )
 
     agent.polyline(quadrilateral + (quadrilateral[0],), agent.renderer.team_color(alt_color=True))
@@ -286,7 +285,7 @@ def valid_ceiling_shot(agent, cap_=5):
         if ball_location.z < 642:
             continue
 
-        if not point_inside_quadrilateral_2d(ball_location.flatten().int(), quadrilateral):
+        if not point_inside_quadrilateral_2d(round(ball_location.flatten()), quadrilateral):
             continue
 
         return ball_location
