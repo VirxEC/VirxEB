@@ -6,9 +6,9 @@ from rlbot.utils.structures.quick_chats import QuickChats
 import virxrlcu
 from util.agent import Vector, VirxERLU, math
 from util.replays import back_kickoff
-from util.routines import (ball_recovery, boost_down, corner_kickoff,
-                           face_target, generic_kickoff, goto, goto_boost,
-                           recovery, retreat, shadow, short_shot, wave_dash, flip, ground_shot)
+from util.routines import (ball_recovery, boost_down, corner_kickoff, corner_kickoff_boost,
+                           face_target, generic_kickoff, goto, goto_boost, recovery, retreat, shadow,
+                           short_shot, wave_dash, flip, ground_shot, back_offset_kickoff, back_offset_kickoff_boost)
 from util.tools import find_any_shot, find_shot
 from util.utils import (almost_equals, cap, get_weight, peek_generator,
                         send_comm, side, sign)
@@ -18,6 +18,13 @@ class VirxEB(VirxERLU):
     def init(self):
         foe_team = -1 if self.team == 1 else 1
         team = -foe_team
+
+        # note that the second value may be positive or negative
+        self.kickoff_left = (-2048 * side(self.team), 2560)
+        self.kickoff_right = (2048 * side(self.team), 2560)
+        self.kickoff_back = (0, 4608)
+        self.kickoff_back_left = (-256 * side(self.team), 3840)
+        self.kickoff_back_right = (256 * side(self.team), 3840)
 
         self.offensive_shots = (
             (Vector(foe_team * 893, foe_team * 5120, 321.3875), Vector(foe_team * -893, foe_team * 5120, 321.3875)),
@@ -277,7 +284,7 @@ class VirxEB(VirxERLU):
                         self.offensive_kickoff()
                     elif almost_equals(self.predictions['team_to_ball'][-1], self.predictions['self_to_ball'], 5):
                         self.defensive_kickoff()
-                elif almost_equals(self.predictions['closest_enemy'], self.predictions['self_to_ball'], 10):
+                elif len(self.foes) == 0 or almost_equals(self.predictions['closest_enemy'], self.predictions['self_to_ball'], 10):
                     self.offensive_kickoff()
                 else:
                     self.defensive_kickoff()
@@ -372,9 +379,7 @@ class VirxEB(VirxERLU):
             msg = msg['VirxERLU']
             if ((msg.get("match_defender", False) and ((not self.is_clear() and self.stack[0].__class__.__name__ not in {"corner_kickoff", "generic_kickoff"}) or self.is_clear())) or (msg.get("attacking", False) and ((not self.is_clear() and self.stack[0].__class__.__name__ not in {"corner_kickoff"}) or self.is_clear()))) and msg['index'] < self.index:
                 self.clear()
-                self.goto_nearest_boost()
-                self.can_shoot = self.time
-                self.kickoff_done = True
+                self.defensive_kickoff()
 
     def handle_quick_chat(self, index, team, quick_chat):
         if self.kickoff_done and team is self.team and index is not self.index:
@@ -411,6 +416,8 @@ class VirxEB(VirxERLU):
             elif self.predictions['self_from_goal'] > 750:
                 self.backcheck()
             elif self.predictions['self_from_goal'] < 750:
+                ball_f = self.ball_prediction_struct.slices[cap(round(self.predictions['enemy_time_to_ball'] * 0.95) * 60, 0, round((len(self.ball_prediction_struct.slices) - 1) / 2))].physics.location
+                ball_f = Vector(ball_f.x, ball_f.y, ball_f.z)
                 ball_f.y = cap(ball_f.y, -5120, 5120)
                 if ball_f.y * side(self.team) > -3840 and abs(self.me.forward.angle(ball_f)) >= 1:
                     self.push(face_target(target=ball_f))
@@ -701,47 +708,51 @@ class VirxEB(VirxERLU):
 
             self.push(shot['shot'])
 
-    def defensive_kickoff(self):
-        self.can_shoot = self.time
+    def kickoff_check(self, pair):
+        return almost_equals(pair[0], self.me.location.x, 50) and almost_equals(pair[1], abs(self.me.location.y), 50)
 
+    def defensive_kickoff(self):
+        if self.kickoff_check(self.kickoff_back):
+            self.backcheck()
+            self.can_shoot = self.time
+            self.kickoff_done = True
+        elif self.kickoff_check(self.kickoff_left) or self.kickoff_check(self.kickoff_right):
+            self.push(corner_kickoff_boost())
+        elif self.kickoff_check(self.kickoff_back_left) or self.kickoff_check(self.kickoff_back_right):
+            self.push(back_offset_kickoff_boost())
+        else:
+            self.print("Unknown kickoff position; skipping")
+            self.kickoff_done = True
+            return
+
+        self.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_Defending)
         self.print("Defending!")
 
         send_comm(self, {
             "match_defender": True
         })
-        self.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_Defending)
-        self.push(retreat())
-        self.can_shoot = self.time
-        self.kickoff_done = True
 
     def offensive_kickoff(self):
-        # note that the second value may be positive or negative
-        left = (-2048 * side(self.team), 2560)
-        right = (2048 * side(self.team), 2560)
-        back = (0, 4608)
-        back_left = (-256 * side(self.team), 3840)
-        back_right = (256 * side(self.team), 3840)
-
-        def kickoff_check(pair):
-            return almost_equals(pair[0], self.me.location.x, 50) and almost_equals(pair[1], abs(self.me.location.y), 50)
-
-        if kickoff_check(back):
+        if self.kickoff_check(self.kickoff_back):
             if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default":
                 self.push(generic_kickoff())
             else:
                 self.push(back_kickoff())
-        elif kickoff_check(left):
+        elif self.kickoff_check(self.kickoff_left):
             if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default":
                 self.push(generic_kickoff())
             else:
                 self.push(corner_kickoff(-1))
-        elif kickoff_check(right):
+        elif self.kickoff_check(self.kickoff_right):
             if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default":
                 self.push(generic_kickoff())
             else:
                 self.push(corner_kickoff(1))
-        elif kickoff_check(back_left) or kickoff_check(back_right):
-            self.push(generic_kickoff())
+        elif self.kickoff_check(self.kickoff_back_left) or self.kickoff_check(self.kickoff_back_right):
+            if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default":
+                self.push(generic_kickoff())
+            else:
+                self.push(back_offset_kickoff())
         else:
             self.print("Unknown kickoff position; skipping")
             self.kickoff_done = True
@@ -781,7 +792,7 @@ class VirxEB(VirxERLU):
                 if len(self.friends) > 0:
                     large_boosts = (boost for boost in self.boosts if boost.large and boost.active and ((self.playstyle is self.playstyles.Offensive and boost.location.y * side(self.team) < -3000) or (self.playstyle is self.playstyles.Neutral and boost.location.y * side(self.team) > -100) or (self.playstyle is self.playstyles.Defensive and boost.location.y * side(self.team) > 3000)))
                 else:
-                    ball_slice = self.ball_prediction_struct.slices[self.future_ball_location_slice].physics
+                    ball_slice = self.ball_prediction_struct.slices[cap(round(self.predictions['enemy_time_to_ball'] * 0.95) * 60, 0, round((len(self.ball_prediction_struct.slices) - 1) / 2))].physics
                     ball_v = Vector(ball_slice.velocity.x, ball_slice.velocity.y, ball_slice.velocity.z)
                     ball = Vector(ball_slice.location.x, ball_slice.location.y, ball_slice.location.z)
                     ball_y = ball.y * side(self.team)

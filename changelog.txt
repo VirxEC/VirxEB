@@ -40,3 +40,5 @@ removed int method from the Vector class in favor of doing round(Vector)
 improved the strategy
 better boost management
 better wave dashes
+new back offset kickoffs
+new defensive kickoffs

@@ -189,7 +189,7 @@ class double_jump:
                     agent.push(wave_dash(agent.me.local_location(self.offset_target)))
                 else:
                     agent.push(flip(agent.me.local_location(self.offset_target)))
-            elif agent.boost_amount != 'unlimited' and angle_to_target >= 2 and distance_remaining > 1000 and velocity < 200:
+            elif agent.boost_amount != 'unlimited' and angle_to_target >= 2 and distance_remaining > 2560 and velocity < 200:
                 agent.push(flip(agent.me.local_location(self.offset_target), True))
         else:
             # Mark the time we started jumping so we know when to dodge
@@ -214,9 +214,9 @@ class double_jump:
             xf += agent.me.up * jump_speed * (T - tau)
 
             delta_x = self.offset_target - xf
-            direction = delta_x.normalize()
+            d_direction = delta_x.normalize()
 
-            if abs(agent.me.forward.dot(direction)) > 0.5:
+            if abs(agent.me.forward.dot(d_direction)) > 0.5:
                 delta_v = delta_x.dot(agent.me.forward) / T
                 if agent.me.boost > 0 and delta_v >= agent.boost_accel * min_boost_time:
                     agent.controller.boost = True
@@ -237,10 +237,10 @@ class double_jump:
             if self.counter == 3:
                 agent.controller.jump = True
             elif self.counter == 4:
-                defaultPD(agent, agent.me.local(self.shot_vector), upside_down=True)
+                defaultPD(agent, agent.me.local(self.shot_vector * direction), upside_down=True)
 
             if self.counter < 3:
-                defaultPD(agent, agent.me.local(self.shot_vector.flatten()))
+                defaultPD(agent, agent.me.local(self.shot_vector.flatten() * direction))
 
         l_vf = vf + agent.me.location
         agent.line(l_vf-Vector(z=100), l_vf+Vector(z=100), agent.renderer.red())
@@ -499,9 +499,9 @@ class goto:
         if agent.me.airborne:
             agent.push(recovery(self.target))
         elif agent.me.boost < 60 and angle_to_target < 0.03 and velocity > 500 and velocity < 2150 and distance_remaining / velocity > 2:
-            agent.push(flip(local_target))
+            agent.push(flip(agent.me.local_location(self.target)))
         elif direction == -1 and distance_remaining > 1000 and velocity < 200:
-            agent.push(flip(local_target, True))
+            agent.push(flip(agent.me.local_location(self.target), True))
 
 
 class shadow:
@@ -877,7 +877,7 @@ class jump_shot:
                     agent.controller.yaw = self.y
                 else:
                     # Face the target as much as possible
-                    defaultPD(agent, agent.me.local_location(self.offset_target))
+                    defaultPD(agent, agent.me.local_location(self.offset_target * direction))
 
                 if jump_elapsed <= jump_max_duration and hf <= self.offset_target.z:
                     # Initial jump to get airborne + we hold the jump button for extra power as required
@@ -1062,6 +1062,89 @@ class corner_kickoff:
         self.last_boost = agent.me.boost
 
         if agent.time - self.start_time > 3.5:
+            agent.kickoff_done = True
+            agent.pop()
+
+
+class corner_kickoff_boost:
+    def __init__(self):
+        self.goto = False
+
+    def run(self, agent: VirxERLU):
+        if not self.goto:
+            self.goto = True
+            agent.push(goto_boost(min(tuple(boost for boost in agent.boosts if boost.large and boost.active), key=lambda boost: boost.location.flat_dist(agent.me.location))))
+        else:
+            agent.pop()
+            agent.kickoff_done = True
+
+
+class back_offset_kickoff_boost:
+    def __init__(self):
+        self.small = False
+        self.large = False
+        self.small_boost = None
+        self.large_boost = None
+        self.goto = None
+
+    def run(self, agent: VirxERLU):
+        if not self.small:
+            if self.goto is None:
+                self.small_boost = min(tuple(boost for boost in agent.boosts if not boost.large and boost.active and abs(boost.location.y) > 3000 and abs(boost.location.x) > 50), key=lambda boost: boost.location.flat_dist(agent.me.location))
+                self.large_boost = min(tuple(boost for boost in agent.boosts if boost.large and boost.active and abs(boost.location.y) > 3000), key=lambda boost: boost.location.flat_dist(agent.me.location))
+                self.goto = goto(self.small_boost.location, self.large_boost.location)
+
+            self.small = not self.small_boost.active
+            self.goto.run(agent, manual=True)
+            agent.controller.boost = True
+        elif not self.large:
+            agent.push(goto_boost(self.large_boost))
+            self.large = True
+        else:
+            agent.pop()
+            agent.kickoff_done = True
+
+
+class back_offset_kickoff:
+    def __init__(self):
+        self.start_time = None
+        self.do_boost = True
+        self.boost_pad = None
+        self.flip = None
+        self.flip_done = None
+        self.flip2 = None
+        self.flip_done2 = None
+
+    def run(self, agent: VirxERLU):
+        if self.start_time is None:
+            self.start_time = agent.time
+            self.boost_pad = min(tuple(boost for boost in agent.boosts if not boost.large and boost.active and boost.location.x == 0 and abs(boost.location.y) < 3000), key=lambda boost: boost.location.flat_dist(agent.me.location))
+
+        agent.controller.throttle = 1
+
+        if self.do_boost:
+            self.do_boost = agent.me.boost != 0
+            agent.controller.boost = True
+    
+        if self.flip is None and agent.me.location.flat_dist(self.boost_pad.location + Vector(y=320 * side(agent.team))) > 480:
+            defaultPD(agent, agent.me.local_location(self.boost_pad.location + Vector(y=320 * side(agent.team))))
+        elif self.flip_done is None:
+            if self.flip is None:
+                self.boost_pad =  min(tuple(boost for boost in agent.boosts if not boost.large and boost.active and boost.location.x == 0 and abs(boost.location.y) < 2000), key=lambda boost: boost.location.flat_dist(agent.me.location))
+                self.flip = flip(Vector(28.5, 71.5 * sign(agent.me.location.x * side(agent.team))))
+
+            self.flip_done = self.flip.run(agent, manual=True)
+        elif self.flip_done2 is None:
+            if self.flip2 is None:
+                self.flip2 = flip(agent.me.local_location(agent.ball.location))
+
+            self.flip_done2 = self.flip2.run(agent, manual=True)
+        else:
+            agent.kickoff_done = True
+            agent.pop()
+            return
+
+        if agent.time - self.start_time > 4.5:
             agent.kickoff_done = True
             agent.pop()
 
