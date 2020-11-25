@@ -376,7 +376,7 @@ class VirxEB(VirxERLU):
                 self.can_shoot = self.time
                 self.kickoff_done = True
 
-    def handle_quick_chat(self, index, team, quick_chat):better
+    def handle_quick_chat(self, index, team, quick_chat):
         if self.kickoff_done and team is self.team and index is not self.index:
             if quick_chat is QuickChats.Information_IGotIt:
                 if side(self.team) * self.ball.location.y < 4200 and not self.predictions['own_goal'] and not self.shooting:
