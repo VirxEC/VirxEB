@@ -550,12 +550,15 @@ class shadow:
         if ball_loc is None:
             ball_loc = self.get_ball_loc(agent)
 
-        distance = 1920 if agent.playstyle is agent.playstyles.Defensive else 2560
+        if len(agent.friends) == 1 and agent.playstyle is agent.playstyles.Neutral and (agent.predictions['was_down'] or abs(agent.game.friend_score - agent.game.foe_score) > 1):
+            distance = 4480
+        else:
+            distance = 1920 if agent.playstyle is agent.playstyles.Defensive else 2560
         distance *= 1 - (agent.predictions['enemy_time_to_ball'] / 10)
 
         target = Vector(y=(ball_loc.y + distance) * side(agent.team))
         if target.y * side(agent.team) > -1280:
-            # use linear algebra to find the proper x coord for us to stop a shot going to the net
+            # find the proper x coord for us to stop a shot going to the net
             # y = mx + b <- yes, finally! 7th grade math is paying off xD
             p1 = agent.friend_goal.location.flatten()
             p2 = ball_loc * Vector(x=1, y=side(agent.team))

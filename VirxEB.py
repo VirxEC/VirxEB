@@ -50,8 +50,8 @@ class VirxEB(VirxERLU):
 
         self.defense_switch = {
             self.playstyles.Defensive: 1920,
-            self.playstyles.Offensive: 1280,
-            self.playstyles.Neutral: 640
+            self.playstyles.Neutral: 1280,
+            self.playstyles.Offensive: 640
         }
 
     def update_predictions(self):
@@ -105,7 +105,7 @@ class VirxEB(VirxERLU):
                     if ball_loc_y < -1280 and self_time_to_ball < team_time_to_ball and self.predictions['self_from_goal'] != self.predictions["team_from_goal"][0]:
                         self.playstyle = self.playstyles.Offensive if len_friends > 1 or (len_friends == 1 and (self.predictions['was_down'] or abs(self.game.friend_score - self.game.foe_score) <= 1)) else self.playstyles.Neutral
                     elif self.predictions['self_from_goal'] == self.predictions["team_from_goal"][0]:
-                        self.playstyle = self.playstyles.Defensive if self.gravity.z < -550 and len_friends > 1 or (len_friends == 1 and (self.predictions['was_down'] or abs(self.game.friend_score - self.game.foe_score) > 1)) else self.playstyles.Neutral
+                        self.playstyle = self.playstyles.Defensive if len_friends > 1 else self.playstyles.Neutral
                     else:
                         self.playstyle = self.playstyles.Neutral
                 else:
@@ -353,7 +353,7 @@ class VirxEB(VirxERLU):
 
                 if self.is_clear() and not self.backcheck():
                     ball_f.y = cap(ball_f.y, -5120, 5120)
-                    if self.is_clear() and ball_f.y * side(self.team) > -3840 and abs(self.me.forward.angle(ball_f)) >= 1:
+                    if ball_f.y * side(self.team) > -3840 and abs(self.me.forward.angle(ball_f)) >= 1:
                         self.push(face_target(target=ball_f))
 
             elif self.me.airborne:
@@ -376,7 +376,7 @@ class VirxEB(VirxERLU):
                 self.can_shoot = self.time
                 self.kickoff_done = True
 
-    def handle_quick_chat(self, index, team, quick_chat):
+    def handle_quick_chat(self, index, team, quick_chat):better
         if self.kickoff_done and team is self.team and index is not self.index:
             if quick_chat is QuickChats.Information_IGotIt:
                 if side(self.team) * self.ball.location.y < 4200 and not self.predictions['own_goal'] and not self.shooting:
@@ -393,8 +393,8 @@ class VirxEB(VirxERLU):
                         self.backcheck()
             elif quick_chat is QuickChats.Information_GoForIt:
                 if self.playstyle is self.playstyles.Neutral:
-                    if self.is_clear() and not self.shooting and self.me.boost >= 36:
-                        if not self.smart_shot(self.best_shot, cap=4) and not self.smart_shot(self.offensive_shots[0], cap=3) and not self.smart_shot(cap=6):
+                    if not self.shooting and self.me.boost >= 36:
+                        if not self.smart_shot(self.best_shot, cap=4) and not self.smart_shot(self.offensive_shots[0], cap=3) and not self.smart_shot(cap=6) and len(self.friends) > 1:
                             self.push(short_shot(self.foe_goal.location))
 
     def defend_ground(self):
@@ -410,6 +410,10 @@ class VirxEB(VirxERLU):
                 self.goto_nearest_boost(only_small=ball.y * side(self.team) > -2560)
             elif self.predictions['self_from_goal'] > 750:
                 self.backcheck()
+            elif self.predictions['self_from_goal'] < 750:
+                ball_f.y = cap(ball_f.y, -5120, 5120)
+                if ball_f.y * side(self.team) > -3840 and abs(self.me.forward.angle(ball_f)) >= 1:
+                    self.push(face_target(target=ball_f))
 
     def defend_air(self):
         if self.odd_tick % 2 == 0 and (self.can_shoot is None or self.predictions['own_goal']):
@@ -454,8 +458,7 @@ class VirxEB(VirxERLU):
                 self.goto_nearest_boost()
                 return
 
-            if self.is_clear():
-                self.backcheck()
+            self.backcheck()
 
     def neutral_air(self):
         if self.odd_tick % 2 == 0 and (self.can_shoot is None or self.predictions['own_goal']):
