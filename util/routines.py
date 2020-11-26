@@ -172,11 +172,18 @@ class double_jump:
             local_offset_target = agent.me.local_location(self.offset_target.flatten())
             local_vf = agent.me.local(vf.flatten())
 
+            cap_ = 7
+            ball_y = agent.ball.location.y * side(agent.team)
+            foes = len(tuple(foe for foe in agent.foes if not foe.demolished and foe.location.y * side(agent.team) < ball_y + 75))
+            if not agent.predictions['goal'] and agent.ball_to_goal > 2560 and agent.ball.location.dist(agent.foe_goal.location) > 900 and foes > 0:
+                factor = 1.2 - 0.04 * foes
+                cap_ = min(agent.predictions['enemy_time_to_ball'] * factor, cap_)
+
             if ((abs(velocity) < 100 and distance_remaining < agent.me.hitbox.length / 2) or (abs(local_offset_target.y) < 92 and direction * local_vf.x >= direction * (local_offset_target.x - agent.me.hitbox.length / 3) and direction * local_offset_target.x > 0)) and T <= self.needed_jump_time * 1.025:
                 self.jumping = True
             elif agent.me.airborne:
                 agent.push(recovery(local_final_target if Tj > 0 else None))
-            elif T <= 0 or (Tj > 0 and distance_remaining > 50 and not virxrlcu.double_jump_shot_is_viable(T, agent.boost_accel, tuple(agent.gravity), agent.me.get_raw(agent), self.offset_target.z, tuple((final_target - agent.me.location).normalize()), distance_remaining)):
+            elif T <= 0 or (Tj > 0 and distance_remaining > 50 and (T > cap_ + 0.4 or not virxrlcu.double_jump_shot_is_viable(T, agent.boost_accel, tuple(agent.gravity), agent.me.get_raw(agent), self.offset_target.z, tuple((final_target - agent.me.location).normalize()), distance_remaining))):
                 # If we're out of time or the ball was hit away or we just can't get enough speed, pop
                 agent.pop()
                 agent.shooting = False
@@ -350,7 +357,7 @@ class Aerial:
             target = delta_x if delta_x.magnitude() > 50 else self.shot_vector
             target = agent.me.local(target)
 
-            if self.jumping:
+            if agent.controller.jump:
                 defaultPD(agent, target.flatten(), up=agent.me.up)
             elif virxrlcu.find_landing_plane(tuple(agent.me.location), tuple(agent.me.velocity), agent.gravity.z) == 4:
                 defaultPD(agent, target, upside_down=True)
@@ -359,7 +366,7 @@ class Aerial:
 
         # only boost/throttle if we're facing the right direction
         if abs(agent.me.forward.dot(direction)) > 0.5 and T > 0:
-            if T > 0.5 and not self.jumping: agent.controller.roll = 1 if self.shot_vector.z < 0 else -1
+            if T > 1 and not self.jumping: agent.controller.roll = 1 if self.shot_vector.z < 0 else -1
             # the change in velocity the bot needs to put it on an intercept course with the target
             delta_v = delta_x.dot(agent.me.forward) / T
             if agent.me.boost > 0 and delta_v >= agent.boost_accel * min_boost_time:
@@ -396,7 +403,7 @@ class flip:
         # keeps track of the frames the jump button has been released
         self.counter = 0
 
-    def run(self, agent: VirxERLU, manual=False):
+    def run(self, agent: VirxERLU, manual=False, recovery_target=None):
         if self.time == -1:
             elapsed = 0
             self.time = agent.time
@@ -415,7 +422,7 @@ class flip:
         else:
             if not manual:
                 agent.pop()
-            agent.push(recovery())
+            agent.push(recovery(recovery_target))
             return True
 
 
@@ -799,11 +806,18 @@ class jump_shot:
             local_offset_target = agent.me.local_location(self.offset_target.flatten())
             local_vf = agent.me.local(vf.flatten())
 
+            cap_ = 7
+            ball_y = agent.ball.location.y * side(agent.team)
+            foes = len(tuple(foe for foe in agent.foes if not foe.demolished and foe.location.y * side(agent.team) < ball_y + 75))
+            if not agent.predictions['goal'] and agent.ball_to_goal > 2560 and agent.ball.location.dist(agent.foe_goal.location) > 900 and foes > 0:
+                factor = 1.2 - 0.04 * foes
+                cap_ = min(agent.predictions['enemy_time_to_ball'] * factor, cap_)
+
             if ((abs(velocity) < 100 and distance_remaining < agent.me.hitbox.length / 2) or (abs(local_offset_target.y) < 92 and direction * local_vf.x >= direction * (local_offset_target.x - agent.me.hitbox.length / 3) and direction * local_offset_target.x > 0)) and T <= self.needed_jump_time * 1.025:
                 self.jumping = True
             elif agent.me.airborne:
                 agent.push(recovery(local_final_target if Tj > 0 else None))
-            elif T <= 0 or (Tj > 0 and distance_remaining > 50 and not virxrlcu.jump_shot_is_viable(T, agent.boost_accel, tuple(agent.gravity), agent.me.get_raw(agent), self.offset_target.z, tuple((final_target - agent.me.location).normalize()), distance_remaining)):
+            elif T <= 0 or (Tj > 0 and distance_remaining > 50 and (T > cap_ + 0.4 or not virxrlcu.jump_shot_is_viable(T, agent.boost_accel, tuple(agent.gravity), agent.me.get_raw(agent), self.offset_target.z, tuple((final_target - agent.me.location).normalize()), distance_remaining))):
                 # If we're out of time or not fast enough to be within 45 units of target at the intercept time, we pop
                 agent.pop()
                 agent.shooting = False
@@ -972,11 +986,18 @@ class ground_shot:
         vf = agent.me.velocity + agent.gravity * T
         local_vf = agent.me.local(vf.flatten())
 
+        cap_ = 7
+        ball_y = agent.ball.location.y * side(agent.team)
+        foes = len(tuple(foe for foe in agent.foes if not foe.demolished and foe.location.y * side(agent.team) < ball_y + 75))
+        if not agent.predictions['goal'] and agent.ball_to_goal > 2560 and agent.ball.location.dist(agent.foe_goal.location) > 900 and foes > 0:
+            factor = 1.2 - 0.04 * foes
+            cap_ = min(agent.predictions['enemy_time_to_ball'] * factor, cap_)
+
         if T < 0.35 and T > 0.1 and min(abs(velocity) + dodge_impulse(agent), 2300) <= (abs(speed_required) if agent.me.boost > 12 else 1900) and ((abs(velocity) < 100 and distance_remaining < agent.me.hitbox.length / 2) or (abs(local_offset_target.y) < 92 and direction * local_vf.x >= direction * (local_offset_target.x - agent.me.hitbox.length / 3) and direction * local_offset_target.x > 0)):
             agent.push(flip(agent.me.local_location(self.offset_target), cancel=angle_to_target > 2))
         elif agent.me.airborne:
             agent.push(recovery(local_final_target if T > 0.5 else None))
-        elif T <= 0 or (T > 0.35 and distance_remaining > 50 and not virxrlcu.ground_shot_is_viable(T, agent.boost_accel, agent.me.get_raw(agent), self.offset_target.z, tuple((final_target - agent.me.location).normalize()), distance_remaining)):
+        elif T <= 0 or (T > 0.35 and distance_remaining > 50 and (T > cap_ + 0.4 or not virxrlcu.ground_shot_is_viable(T, agent.boost_accel, agent.me.get_raw(agent), self.offset_target.z, tuple((final_target - agent.me.location).normalize()), distance_remaining))):
             # If we're out of time or not fast enough, we pop
             agent.pop()
             agent.shooting = False
@@ -1027,6 +1048,8 @@ class corner_kickoff:
         self.last_boost = 34
         self.flip = None
         self.flip_done = None
+        self.flip2 = None
+        self.flip_done2 = None
 
     def run(self, agent: VirxERLU):
         if self.start_time is None:
@@ -1046,9 +1069,14 @@ class corner_kickoff:
                 agent.controller.steer = self.direction
             elif self.flip_done is None:
                 if self.flip is None:
-                    self.flip = flip(Vector(70, -30 * sign(agent.me.location.x * side(agent.team))))
+                    self.flip = flip(Vector(65, -35 * sign(agent.me.location.x * side(agent.team))))
 
                 self.flip_done = self.flip.run(agent, manual=True)
+            elif self.flip_done2 is None:
+                if self.flip2 is None:
+                    self.flip2 = flip(agent.me.local_location(agent.foe_goal.location))
+
+                self.flip_done2 = self.flip2.run(agent, manual=True)
             else:
                 agent.kickoff_done = True
                 agent.pop()
@@ -1056,7 +1084,7 @@ class corner_kickoff:
 
         self.last_boost = agent.me.boost
 
-        if agent.time - self.start_time > 3.5:
+        if agent.time - self.start_time > 4:
             agent.kickoff_done = True
             agent.pop()
 
@@ -1126,9 +1154,9 @@ class back_offset_kickoff:
         elif self.flip_done is None:
             if self.flip is None:
                 self.boost_pad =  min(tuple(boost for boost in agent.boosts if not boost.large and boost.active and boost.location.x == 0 and abs(boost.location.y) < 2000), key=lambda boost: boost.location.flat_dist(agent.me.location))
-                self.flip = flip(Vector(28.5, 71.5 * sign(agent.me.location.x * side(agent.team))))
+                self.flip = flip(Vector(27, 73 * sign(agent.me.location.x * side(agent.team))))
 
-            self.flip_done = self.flip.run(agent, manual=True)
+            self.flip_done = self.flip.run(agent, manual=True, recovery_target=agent.ball.location)
         elif self.flip_done2 is None:
             if self.flip2 is None:
                 self.flip2 = flip(agent.me.local_location(agent.ball.location))
@@ -1139,7 +1167,7 @@ class back_offset_kickoff:
             agent.pop()
             return
 
-        if agent.time - self.start_time > 4.5:
+        if agent.time - self.start_time > 4:
             agent.kickoff_done = True
             agent.pop()
 

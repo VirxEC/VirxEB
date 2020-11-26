@@ -712,7 +712,7 @@ class VirxEB(VirxERLU):
         return almost_equals(pair[0], self.me.location.x, 50) and almost_equals(pair[1], abs(self.me.location.y), 50)
 
     def defensive_kickoff(self):
-        if self.kickoff_check(self.kickoff_back):
+        if self.kickoff_check(self.kickoff_back) or self.boost_amount != "default":
             self.backcheck()
             self.can_shoot = self.time
             self.kickoff_done = True
