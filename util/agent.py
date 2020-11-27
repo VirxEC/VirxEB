@@ -52,11 +52,6 @@ class VirxERLU(BaseAgent):
             f"-traceback ({T}).txt"
         )
 
-        if not self.tournament:
-            self.gui = Gui(self)
-            self.print("Starting the GUI...")
-            self.gui.start()
-
         self.predictions = {
             "closest_enemy": 0,
             "own_goal": False,
@@ -78,7 +73,8 @@ class VirxERLU(BaseAgent):
 
         self.print("Building game information")
 
-        mutators = self.get_match_settings().MutatorSettings()
+        match_settings = self.get_match_settings()
+        mutators = match_settings.MutatorSettings()
 
         gravity = (
             Vector(z=-650),
@@ -104,9 +100,28 @@ class VirxERLU(BaseAgent):
             "no boost"
         )
 
+        game_mode = (
+            "soccer",
+            "hoops",
+            "dropshot",
+            "hockey",
+            "rumble",
+            "heatseeker"
+        )
+
         self.gravity = gravity[mutators.GravityOption()]
         self.boost_accel = boost_accel[mutators.BoostStrengthOption()]
         self.boost_amount = boost_amount[mutators.BoostOption()]
+        self.game_mode = game_mode[match_settings.GameMode()]
+
+        if self.game_mode == "heatseeker":
+            self.print("Preparing for heatseeker")
+            self.goalie = True
+
+        if not self.tournament:
+            self.gui = Gui(self)
+            self.print("Starting the GUI...")
+            self.gui.start()
 
         self.friends = ()
         self.foes = ()

@@ -1153,7 +1153,17 @@ class back_offset_kickoff:
             defaultPD(agent, agent.me.local_location(self.boost_pad.location + Vector(y=320 * side(agent.team))))
         elif self.flip_done is None:
             if self.flip is None:
-                self.boost_pad =  min(tuple(boost for boost in agent.boosts if not boost.large and boost.active and boost.location.x == 0 and abs(boost.location.y) < 2000), key=lambda boost: boost.location.flat_dist(agent.me.location))
+                self.boost_pad = tuple(boost for boost in agent.boosts if not boost.large and boost.active and boost.location.x == 0 and abs(boost.location.y) < 2000)
+                if len(self.boost_pad) == 0:
+                    agent.pop()
+                    if agent.boost_amount == "default":
+                        agent.push(back_offset_kickoff_boost())
+                    else:
+                        agent.push(retreat())
+                        agent.kickoff_done = True
+                    return
+
+                self.boost_pad = min(self.boost_pad, key=lambda boost: boost.location.flat_dist(agent.me.location))
                 self.flip = flip(Vector(27, 73 * sign(agent.me.location.x * side(agent.team))))
 
             self.flip_done = self.flip.run(agent, manual=True, recovery_target=agent.ball.location)

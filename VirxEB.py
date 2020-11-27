@@ -712,7 +712,7 @@ class VirxEB(VirxERLU):
         return almost_equals(pair[0], self.me.location.x, 50) and almost_equals(pair[1], abs(self.me.location.y), 50)
 
     def defensive_kickoff(self):
-        if self.kickoff_check(self.kickoff_back) or self.boost_amount != "default":
+        if self.kickoff_check(self.kickoff_back) or self.boost_amount != "default" or self.game_mode == "heatseeker":
             self.backcheck()
             self.can_shoot = self.time
             self.kickoff_done = True
@@ -733,6 +733,11 @@ class VirxEB(VirxERLU):
         })
 
     def offensive_kickoff(self):
+        if self.game_mode == "heatseeker" or self.game_mode == "hoops":
+            self.print(f"Skipping the kickoff due to the gamemode")
+            self.kickoff_done = True
+            return
+
         if self.kickoff_check(self.kickoff_back):
             if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default":
                 self.push(generic_kickoff())
