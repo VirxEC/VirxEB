@@ -183,7 +183,7 @@ class double_jump:
                 self.jumping = True
             elif agent.me.airborne:
                 agent.push(recovery(local_final_target if Tj > 0 else None))
-            elif T <= 0 or (Tj > 0 and distance_remaining > 50 and (T > cap_ + 0.4 or not virxrlcu.double_jump_shot_is_viable(T, agent.boost_accel, tuple(agent.gravity), agent.me.get_raw(agent), self.offset_target.z, tuple((final_target - agent.me.location).normalize()), distance_remaining))):
+            elif T <= 0 or (Tj > 0 and distance_remaining > 50 and (T > cap_ + 1 or not virxrlcu.double_jump_shot_is_viable(T, agent.boost_accel, tuple(agent.gravity), agent.me.get_raw(agent), self.offset_target.z, tuple((final_target - agent.me.location).normalize()), distance_remaining))):
                 # If we're out of time or the ball was hit away or we just can't get enough speed, pop
                 agent.pop()
                 agent.shooting = False
@@ -223,7 +223,7 @@ class double_jump:
             delta_x = self.offset_target - xf
             d_direction = delta_x.normalize()
 
-            if abs(agent.me.forward.dot(d_direction)) > 0.5:
+            if direction == 1 and abs(agent.me.forward.dot(d_direction)) > 0.5:
                 delta_v = delta_x.dot(agent.me.forward) / T
                 if agent.me.boost > 0 and delta_v >= agent.boost_accel * min_boost_time:
                     agent.controller.boost = True
@@ -817,7 +817,7 @@ class jump_shot:
                 self.jumping = True
             elif agent.me.airborne:
                 agent.push(recovery(local_final_target if Tj > 0 else None))
-            elif T <= 0 or (Tj > 0 and distance_remaining > 50 and (T > cap_ + 0.4 or not virxrlcu.jump_shot_is_viable(T, agent.boost_accel, tuple(agent.gravity), agent.me.get_raw(agent), self.offset_target.z, tuple((final_target - agent.me.location).normalize()), distance_remaining))):
+            elif T <= 0 or (Tj > 0 and distance_remaining > 50 and (T > cap_ + 1 or not virxrlcu.jump_shot_is_viable(T, agent.boost_accel, tuple(agent.gravity), agent.me.get_raw(agent), self.offset_target.z, tuple((final_target - agent.me.location).normalize()), distance_remaining))):
                 # If we're out of time or not fast enough to be within 45 units of target at the intercept time, we pop
                 agent.pop()
                 agent.shooting = False
@@ -852,7 +852,7 @@ class jump_shot:
             delta_x = self.offset_target - xf
             d_direction = delta_x.normalize()
 
-            if abs(agent.me.forward.dot(d_direction)) > 0.5 and self.counter < 3:
+            if direction == 1 and abs(agent.me.forward.dot(d_direction)) > 0.5 and self.counter < 3:
                 delta_v = delta_x.dot(agent.me.forward) / T
                 if agent.me.boost > 0 and delta_v >= agent.boost_accel * min_boost_time:
                     agent.controller.boost = True
@@ -997,7 +997,7 @@ class ground_shot:
             agent.push(flip(agent.me.local_location(self.offset_target), cancel=angle_to_target > 2))
         elif agent.me.airborne:
             agent.push(recovery(local_final_target if T > 0.5 else None))
-        elif T <= 0 or (T > 0.35 and distance_remaining > 50 and (T > cap_ + 0.4 or not virxrlcu.ground_shot_is_viable(T, agent.boost_accel, agent.me.get_raw(agent), self.offset_target.z, tuple((final_target - agent.me.location).normalize()), distance_remaining))):
+        elif T <= 0 or (T > 0.35 and distance_remaining > 50 and (T > cap_ + 1 or not virxrlcu.ground_shot_is_viable(T, agent.boost_accel, agent.me.get_raw(agent), self.offset_target.z, tuple((final_target - agent.me.location).normalize()), distance_remaining))):
             # If we're out of time or not fast enough, we pop
             agent.pop()
             agent.shooting = False
@@ -1057,7 +1057,7 @@ class corner_kickoff:
 
         agent.controller.throttle = 1
 
-        if agent.me.boost > 12:
+        if agent.me.boost > 16:
             agent.controller.boost = True
 
         if agent.me.boost > self.last_boost:
