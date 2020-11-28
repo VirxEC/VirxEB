@@ -156,7 +156,6 @@ class VirxERLU(BaseAgent):
         self.can_shoot = None
         self.shot_weight = -1
         self.shot_time = -1
-        self.last_ball_location = Vector(z=93)
 
     def retire(self):
         # Stop the currently running threads

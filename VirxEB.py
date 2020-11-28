@@ -43,16 +43,9 @@ class VirxEB(VirxERLU):
 
         self.max_shot_weight = 4
         self.playstyles_switch = {
-            'ground': {
-                self.playstyles.Defensive: self.defend_ground,
-                self.playstyles.Neutral: self.neutral_ground,
-                self.playstyles.Offensive: self.attack_ground
-            },
-            'air': {
-                self.playstyles.Defensive: self.defend_air,
-                self.playstyles.Neutral: self.neutral_air,
-                self.playstyles.Offensive: self.attack_air
-            }
+            self.playstyles.Defensive: self.defend,
+            self.playstyles.Neutral: self.neutral,
+            self.playstyles.Offensive: self.attack
         }
 
         self.defense_switch = {
@@ -289,6 +282,11 @@ class VirxEB(VirxERLU):
                 else:
                     self.defensive_kickoff()
         else:
+            if self.can_shoot is None:
+                self.dbg_3d("Can shoot: True")
+            else:
+                self.dbg_3d(f"Can shoot: {self.can_shoot - self.time}")
+
             if self.predictions['enemy_time_to_ball'] != 7:
                 intercept_slice = cap(round(self.predictions['enemy_time_to_ball'] * 60), 0, len(self.ball_prediction_struct.slices) - 1)
                 intercept_location = self.ball_prediction_struct.slices[intercept_slice].physics.location
@@ -301,83 +299,69 @@ class VirxEB(VirxERLU):
                 ball_loc = self.ball.location * side(self.team)
                 self_loc = self.me.location * side(self.team)
 
-                ball_f = self.ball_prediction_struct.slices[cap(round(self.predictions['enemy_time_to_ball'] * 0.95) * 60, 0, round((len(self.ball_prediction_struct.slices) - 1) / 2))].physics.location
-                ball_f = Vector(ball_f.x, ball_f.y, ball_f.z)
-
-                if not self.predictions['own_goal'] and self_loc.y <= ball_loc.y - 50 and not self.shooting and (self.is_clear() or self.stack[0].__class__.__name__ == 'goto_boost') and abs(ball_loc.x) > 1024 and self.backcheck(clear_on_valid=True):
+                if not self.predictions['own_goal'] and self_loc.y <= ball_loc.y - 50 and not self.shooting and (self.is_clear() or self.get_stack_name() == 'goto_boost') and abs(ball_loc.x) > 1024 and self.backcheck(clear_on_valid=True):
                     return
 
-                if len(self.friends) == 0 and not self.me.airborne and self.ball.location.y * side(self.team) > 1280 and self.predictions['enemy_time_to_ball'] > 3 and self.me.boost < 36:
-                    if (not self.is_clear() and self.stack[0].__class__.__name__ == 'goto_boost') or ((self.is_clear() or self.stack[0].__class__.__name__ != 'goto_boost') and self.goto_nearest_boost(clear_on_valid=True)):
+                if not self.me.airborne and self.ball.location.y * side(self.team) > 1280 and self.predictions['enemy_time_to_ball'] > 3 and self.me.boost < 36:
+                    if (not self.is_clear() and self.get_stack_name() == 'goto_boost') or ((self.is_clear() or self.get_stack_name() != 'goto_boost') and self.goto_nearest_boost(clear_on_valid=True)):
                         return
 
                 # This is a list of all tm8s that are onside
-                team_to_ball = [car.location.flat_dist(self.ball.location) for car in self.friends if car.location.y * side(self.team) >= ball_loc.y + 100 and abs(car.location.x) < abs(ball_loc.x) - 250]
+                team_to_ball = [car.location.flat_dist(self.ball.location) for car in self.friends if car.location.y * side(self.team) >= ball_loc.y + 95 and abs(car.location.x) < abs(agent.ball.location.x) - 250]
                 self_to_ball = self.me.location.flat_dist(self.ball.location)
                 team_to_ball.append(self_to_ball)
                 team_to_ball.sort()
 
-                if not self.shooting or self.shot_weight == -1:
-                    if len(team_to_ball) == 1 or team_to_ball[math.ceil(len(team_to_ball) / 2)] + 10 > self_to_ball:
-                        self.can_shoot = None
+                if len(team_to_ball) == 1 or team_to_ball[math.ceil(len(team_to_ball) / 2)] + 10 > self_to_ball:
+                    self.can_shoot = None
 
-                    fake_own_goal = self.last_ball_location.dist(self.friend_goal.location) > self.ball.location.dist(self.friend_goal.location) and self_loc.y < ball_loc.y and abs(self_loc.x) < abs(ball_loc.x)
-
-                    if self_loc.y > ball_loc.y + 100:
-                        for shot in self.defensive_shots:
-                            if self.smart_shot(shot, cap=6):
-                                return
-
-                        if self.smart_shot(weight=self.max_shot_weight - 3, cap=2):
-                            return
-
-                    if ball_loc.y - self_loc.y < ball_loc.x - self_loc.x and (fake_own_goal or self.predictions['own_goal'] or (len(team_to_ball) > 1 and team_to_ball[math.ceil(len(team_to_ball) / 2)] + 10 > self_to_ball) or (len(team_to_ball) == 1 and self_to_ball < 2560) or (abs(ball_loc.x) < 900 and ball_loc.y > 1280)):
-                        if team_to_ball[0] is self_to_ball and self.smart_shot(weight=self.max_shot_weight - 3, cap=6):
-                            return
-
-                elif self.shooting and self.odd_tick == 0:
-                    for i, d_shot in enumerate(self.defensive_shots):
-                        shot_weight = get_weight(self, index=i)
-
-                        if shot_weight < self.shot_weight:
-                            break
-
-                        shot = self.get_shot(d_shot, weight=shot_weight)
-
-                        if shot is not None:
-                            self.upgrade_shot(shot)
-                            return
-
-                    if self.shot_weight is self.max_shot_weight - 3:
-                        shot = self.get_shot(self.anti_shot, weight=self.max_shot_weight - 3)
-
-                        if shot is not None:
-                            self.upgrade_shot(shot)
-                            return
-
-                    if self_loc.y <= ball_loc.y - 50 and not self.shooting and (self.is_clear() or self.stack[0].__class__.__name__ == 'goto_boost') and self.backcheck(clear_on_valid=True):
+                if self.can_shoot is None and (self.is_clear() or self.odd_tick == 0):
+                    if ball_loc.y - self_loc.y < ball_loc.x - self_loc.x and (self.predictions['own_goal'] or (len(team_to_ball) > 1 and team_to_ball[math.ceil(len(team_to_ball) / 2)] + 10 > self_to_ball) or (len(team_to_ball) == 1 and self_to_ball < 2560) or (abs(ball_loc.x) < 900 and ball_loc.y > 1280)) and team_to_ball[0] is self_to_ball and self.smart_shot(weight=self.max_shot_weight - 3, cap=4):
                         return
 
+                    if self_loc.y > ball_loc.y + 95:
+                        if self.smart_shot(self.best_shot, cap=5):
+                            return
+
+                        for i, shot in enumerate(self.defensive_shots):
+                            shot_weight = get_weight(self, index=i)
+
+                            if self.shooting and shot_weight < self.shot_weight:
+                                break
+
+                            shot = self.get_shot(shot, weight=shot_weight, cap=4)
+
+                            if shot is not None:
+                                if self.shooting:
+                                    self.upgrade_shot(shot)
+                                else:
+                                    self.shoot_from(shot, clear_on_valid=True)
+                                return
+
+                        if self.smart_shot(self.anti_shot, weight=self.max_shot_weight - 3, cap=3):
+                            return
+
                 if self.is_clear() and not self.backcheck():
+                    ball_f = self.ball_prediction_struct.slices[cap(round(self.predictions['enemy_time_to_ball'] * 0.95) * 60, 0, round((len(self.ball_prediction_struct.slices) - 1) / 2))].physics.location
+                    ball_f = Vector(ball_f.x, ball_f.y, ball_f.z)
                     ball_f.y = cap(ball_f.y, -5120, 5120)
                     if ball_f.y * side(self.team) > -3840 and abs(self.me.forward.angle(ball_f)) >= 1:
                         self.push(face_target(target=ball_f))
 
-            elif self.me.airborne:
-                self.playstyles_switch['air'][self.playstyle]()
-
-                if self.is_clear():
-                    self.push(recovery())
             else:
-                self.playstyles_switch['ground'][self.playstyle]()
+                if self.me.airborne and self.is_clear():
+                    self.push(recovery())
 
-            self.last_ball_location = self.ball.location
+                if not self.is_clear() and self.get_stack_name() == "short_shot" and self.me.location.y * side(self) < self.ball.location.y:
+                    self.clear()
+
+                self.playstyles_switch[self.playstyle]()
         ""
 
     def handle_match_comm(self, msg):
         if not self.kickoff_done and msg.get("VirxERLU") is not None and msg['VirxERLU']['team'] is self.team:
             msg = msg['VirxERLU']
-            if ((msg.get("match_defender", False) and ((not self.is_clear() and self.stack[0].__class__.__name__ not in {"corner_kickoff", "generic_kickoff"}) or self.is_clear())) or (msg.get("attacking", False) and ((not self.is_clear() and self.stack[0].__class__.__name__ not in {"corner_kickoff"}) or self.is_clear()))) and msg['index'] < self.index:
+            if ((msg.get("match_defender", False) and ((not self.is_clear() and self.get_stack_name() not in {"corner_kickoff", "generic_kickoff"}) or self.is_clear())) or (msg.get("attacking", False) and ((not self.is_clear() and self.get_stack_name() not in {"corner_kickoff"}) or self.is_clear()))) and msg['index'] < self.index:
                 self.clear()
                 self.defensive_kickoff()
 
@@ -391,19 +375,20 @@ class VirxEB(VirxERLU):
                     elif side(self.team) * self.ball.location.y < 750:
                         self.can_shoot += 2
                     else:
-                        self.can_shoot += 1
+                        self.can_shoot += 1.5
 
                     if self.shooting and self.shot_weight == -1:
                         self.clear()
                         self.backcheck()
             elif quick_chat is QuickChats.Information_GoForIt:
                 if self.playstyle is self.playstyles.Neutral:
+                    self.can_shoot = None
                     if not self.shooting and self.me.boost >= 36:
-                        if not self.smart_shot(self.best_shot, cap=4) and not self.smart_shot(self.offensive_shots[0], cap=3) and not self.smart_shot(cap=6) and len(self.friends) > 1:
+                        if not self.smart_shot(self.best_shot, cap=6) and not self.smart_shot(self.offensive_shots[0], cap=6) and not self.smart_shot(cap=6) and len(self.friends) > 1:
                             self.push(short_shot(self.foe_goal.location))
 
-    def defend_ground(self):
-        if self.shooting and not self.predictions['own_goal'] and self.ball.location.y * side(self.team) < 960:
+    def defend(self):
+        if self.shooting and not self.predictions['own_goal'] and self.ball.location.y * side(self.team) < self.defense_switch[self.playstyle]:
             self.clear()
 
         if self.is_clear():
@@ -415,231 +400,108 @@ class VirxEB(VirxERLU):
                 self.goto_nearest_boost(only_small=ball.y * side(self.team) > -2560)
             elif self.predictions['self_from_goal'] > 750:
                 self.backcheck()
-            elif self.predictions['self_from_goal'] < 750:
+            else:
                 ball_f = self.ball_prediction_struct.slices[cap(round(self.predictions['enemy_time_to_ball'] * 0.95) * 60, 0, round((len(self.ball_prediction_struct.slices) - 1) / 2))].physics.location
                 ball_f = Vector(ball_f.x, ball_f.y, ball_f.z)
                 ball_f.y = cap(ball_f.y, -5120, 5120)
                 if ball_f.y * side(self.team) > -3840 and abs(self.me.forward.angle(ball_f)) >= 1:
                     self.push(face_target(target=ball_f))
 
-    def defend_air(self):
-        if self.odd_tick % 2 == 0 and (self.can_shoot is None or self.predictions['own_goal']):
-            shot = self.get_shot(weight=self.max_shot_weight - 1)
+    def neutral(self):
+        if not self.shooting and self.me.boost < 12:
+            if self.is_clear():
+                self.goto_nearest_boost()
 
-            if shot is not None:
-                if self.shooting:
-                    self.shoot_from(shot)
-                else:
-                    self.upgrade_shot(shot)
+            if not self.is_clear():
+                return
 
-        if (self.is_clear() or self.stack[0].__class__.__name__ == "ball_recovery") and self.boost_amount == 'unlimited' and self.gravity.z > -700 and self.me.location.z > 750 and self.predictions['self_to_ball'] > 2560:
+        if self.can_shoot is None and (self.is_clear() or self.odd_tick == 0):
+            if self.smart_shot(self.best_shot, cap=5):
+                return
+
+            for i, shot in enumerate(self.defensive_shots if self.ball.location.y * side(self.team) > -2560 else self.offensive_shots):
+                shot_weight = get_weight(self, index=i)
+
+                if self.shooting and shot_weight < self.shot_weight:
+                    break
+
+                shot = self.get_shot(shot, weight=shot_weight, cap=4)
+
+                if shot is not None:
+                    if self.shooting:
+                        self.upgrade_shot(shot)
+                    else:
+                        self.shoot_from(shot, clear_on_valid=True)
+                    return
+
+        if (self.is_clear() or self.get_stack_name() == "ball_recovery") and self.boost_amount == 'unlimited' and self.gravity.z > -700 and self.me.location.z > 750 and self.predictions['self_to_ball'] > 2560:
             if not self.is_clear():
                 self.clear()
 
             self.push(boost_down())
-
-    def neutral_ground(self):
-        if (self.shot_weight == -1 or not self.shooting) and (self.is_clear() or self.odd_tick % 2 == 0):
-            if not self.smart_shot(self.best_shot, cap=5) and (not self.smart_shot(self.offensive_shots[0], cap=4) or len(self.friends) == 0 or self.can_shoot is not None):
-                if self.ball.location.y * side(self.team) > (-1280 if len(self.friends) == 0 else 2580):
-                    for i, shot in enumerate(self.defensive_shots[1:]):
-                        shot_weight = get_weight(self, index=i)
-
-                        if self.shooting and shot_weight < self.shot_weight:
-                            break
-
-                        shot = self.get_shot(shot, weight=shot_weight, cap=3)
-
-                        if shot is not None:
-                            if self.shooting:
-                                self.upgrade_shot(shot)
-                            else:
-                                self.shoot_from(shot, clear_on_valid=True)
-                            return
-
-                    if self.me.location.y * side(self.team) > self.ball.location.y * side(self.team) and self.smart_shot(cap=3, weight=self.max_shot_weight - 3):
-                        return
+            return
 
         if self.is_clear():
-            if self.me.boost < 50:
+            if self.can_shoot is not None and self.me.boost < 50:
                 self.goto_nearest_boost()
-                return
+
+                if not self.is_clear():
+                    return
 
             self.backcheck()
 
-    def neutral_air(self):
-        if self.odd_tick % 2 == 0 and (self.can_shoot is None or self.predictions['own_goal']):
-            self.line(*self.offensive_shots[0], self.renderer.team_color(alt_color=True))
-            shot = self.get_shot(self.best_shot, cap=5)
+    def attack(self):
+        if (self.is_clear() or self.get_stack_name() == "short_shot") and self.me.boost < 12:
+            self.goto_nearest_boost(clear_on_valid=True)
 
-            if shot is None:
-                shot = self.get_shot(self.offensive_shots[0], cap=3)
-
-                if shot is None:
-                    self.line(*self.offensive_shots[1], self.renderer.team_color(alt_color=True))
-                    shot = self.get_shot(self.offensive_shots[1], weight=self.max_shot_weight - 1, cap=3)
-
-                    if shot is None:
-                        self.line(*self.offensive_shots[2], self.renderer.team_color(alt_color=True))
-                        shot = self.get_shot(self.offensive_shots[2], weight=self.max_shot_weight - 1, cap=3)
-
-            if shot is not None:
-                if self.shooting:
-                    self.upgrade_shot(shot)
-                else:
-                    self.shoot_from(shot)
+            if not self.is_clear() and self.get_stack_name() == "goto_boost":
+                self.send_quick_chat(QuickChats.CHAT_EVERYONE, QuickChats.Information_GoForIt)
                 return
 
-        if (self.is_clear() or self.stack[0].__class__.__name__ == "ball_recovery") and self.boost_amount == 'unlimited' and self.gravity.z > -700 and self.me.location.z > 750 and self.predictions['self_to_ball'] > 2560:
-            if not self.is_clear():
-                self.clear()
+        if not self.is_clear() and self.get_stack_name() == "goto_boost" and self.me.boost < 24:
+            return
 
-            self.push(boost_down())
+        if self.can_shoot is None and (self.is_clear() or self.odd_tick == 0):
+            if self.smart_shot(self.best_shot, cap=6):
+                return
 
-    def attack_ground(self):
-        if not self.shooting or self.shot_weight == -1:
-            if self.predictions['goal'] or (self.foe_goal.location.dist(self.ball.location) <= 5120 and (self.predictions['closest_enemy'] > 5120 or self.foe_goal.location.dist(self.me.location) < self.predictions['closest_enemy'] + 250)) or self.foe_goal.location.dist(self.ball.location) < 750:
-                self.line(*self.best_shot, self.renderer.team_color(alt_color=True))
-                shot = self.get_shot(self.best_shot, cap=4)
+            for i, shot in enumerate(self.defensive_shots if self.ball.location.y * side(self.team) > -2560 else self.offensive_shots):
+                shot_weight = get_weight(self, index=i)
 
-                if shot is not None:
-                    self.shoot_from(shot, clear_on_valid=True)
-            elif self.can_shoot is None or self.predictions['own_goal']:
-                shots = [self.offensive_shots[0]]
-                if self.ball.location.x * side(not self.team) > 1000:
-                    shots.append(self.offensive_shots[1])
-                elif self.ball.location.x * side(not self.team) < -1000:
-                    shots.append(self.offensive_shots[2])
+                if self.shooting and shot_weight < self.shot_weight:
+                    break
 
-                for o_shot in shots:
-                    self.line(*o_shot, self.renderer.team_color(alt_color=True))
-
-                for i, o_shot in enumerate(shots):
-                    shot = self.get_shot(self.best_shot, cap=4) if i == 0 else None
-
-                    if shot is None:
-                        shot = self.get_shot(o_shot, cap=3)
-
-                    if shot is not None:
-                        self.shoot_from(shot, defend=False, clear_on_valid=True)
-                        return
-
-                if self.ball.location.y * side(self.team) > -1280:
-                    for i, shot in enumerate(self.defensive_shots[1:]):
-                        shot = self.get_shot(shot, cap=3)
-
-                        if shot is not None:
-                            self.shoot_from(shot)
-                            return
-
-                    if self.me.location.y * side(self.team) > self.ball.location.y * side(self.team) and self.smart_shot(cap=3):
-                        return
-
-            if self.is_clear():
-                self.send_quick_chat(QuickChats.CHAT_EVERYONE, QuickChats.Information_GoForIt)
-                if self.me.boost < 90:
-                    self.goto_nearest_boost()
-                else:
-                    self.backcheck()
-        elif self.odd_tick % 2 == 0 and self.shooting and (self.can_shoot is None or self.predictions['own_goal']):
-            if self.predictions['goal'] or (self.foe_goal.location.dist(self.ball.location) <= 1500 and (self.predictions['closest_enemy'] > 1400 or self.foe_goal.location.dist(self.me.location) < self.predictions['closest_enemy'] + 250)):
-                self.line(*self.best_shot, self.renderer.team_color(alt_color=True))
-                shot = self.get_shot(self.best_shot)
+                shot = self.get_shot(shot, weight=shot_weight, cap=6)
 
                 if shot is not None:
                     if self.shooting:
                         self.upgrade_shot(shot)
                     else:
-                        self.shoot_from(shot)
-            elif self.odd_tick == 0:
-                if self.ball.location.y * side(self.team) > -1280:
-                    for i, shot in enumerate(self.defensive_shots[1:]):
-                        shot_weight = get_weight(self, index=i)
-
-                        if shot_weight < self.shot_weight:
-                            break
-
-                        shot = self.get_shot(shot)
-
-                        if shot is not None:
-                            if self.shooting:
-                                self.upgrade_shot(shot)
-                            else:
-                                self.shoot_from(shot)
-                            return
-
-                    if self.me.location.y * side(self.team) > self.ball.location.y * side(self.team) and self.smart_shot():
-                        return
-                else:
-                    shots = [self.offensive_shots[0]]
-                    if self.ball.location.x * side(not self.team) > 1000:
-                        shots.append(self.offensive_shots[1])
-                    elif self.ball.location.x * side(not self.team) < -1000:
-                        shots.append(self.offensive_shots[2])
-
-                    for o_shot in shots:
-                        self.line(*o_shot, self.renderer.team_color(alt_color=True))
-
-                    for i, o_shot in enumerate(shots):
-                        shot = None
-                        if i == 0:
-                            shot_weight = self.max_shot_weight + 1
-                            shot = self.get_shot(self.best_shot, weight=shot_weight)
-
-                        if shot is None:
-                            shot_weight = get_weight(self, index=i)
-
-                            if shot_weight < self.shot_weight:
-                                break
-
-                            shot = self.get_shot(o_shot, weight=shot_weight)
-
-                        if shot is not None:
-                            if self.shooting:
-                                self.upgrade_shot(shot)
-                            else:
-                                self.shoot_from(shot)
-                            return
-
-        if (self.is_clear() or not self.shooting) and self.odd_tick == 0:
-            if not self.smart_shot(self.best_shot, cap=4 if self.can_shoot is None else 1) and (self.can_shoot is not None or not self.smart_shot(self.offensive_shots[0], cap=3)) and self.is_clear() and self.ball.location.y * side(self.team) > self.me.location.y - 250:
-                self.send_quick_chat(QuickChats.CHAT_EVERYONE, QuickChats.Information_GoForIt)
-                self.backcheck()
-
-    def attack_air(self):
-        if self.odd_tick % 2 == 0 and (self.can_shoot is None or self.predictions['own_goal']):
-            if self.predictions['goal'] or (self.foe_goal.location.dist(self.ball.location) <= 1500 and (self.predictions['closest_enemy'] > 1400 or self.foe_goal.location.dist(self.me.location) < self.predictions['closest_enemy'] + 250)):
-                self.line(*self.best_shot, self.renderer.team_color(alt_color=True))
-                shot = self.get_shot(self.best_shot, cap=2)
-
-                if shot is not None:
-                    if self.shooting:
-                        self.upgrade_shot(shot)
-                    else:
-                        self.shoot_from(shot)
-                    return
-            else:
-                self.line(*self.offensive_shots[0], self.renderer.team_color(alt_color=True))
-
-                shot = self.get_shot(self.best_shot, weight=self.max_shot_weight + 1, cap=2)
-
-                if shot is None:
-                    shot = self.get_shot(self.offensive_shots[0], weight=self.max_shot_weight, cap=2)
-
-                if shot is not None:
-                    if self.shooting:
-                        self.upgrade_shot(shot)
-                    else:
-                        self.shoot_from(shot)
+                        self.shoot_from(shot, clear_on_valid=True)
                     return
 
-        if (self.is_clear() or self.stack[0].__class__.__name__ == "ball_recovery") and self.boost_amount == 'unlimited' and self.gravity.z > -700 and self.me.location.z > 750 and self.predictions['self_to_ball'] > 2560:
-            if not self.is_clear():
-                self.clear()
+            if not self.predictions['goal'] and (self.is_clear() or self.shot_weight == self.max_shot_weight - 3) and self.me.location.y * side(self.team) > self.ball.location.y * side(self.team) + 1280:
+                shot = self.get_shot(self.anti_shot, weight=self.max_shot_weight - 3, cap=6)
+                if shot is not None:
+                    self.shoot_from(shot)
 
-            self.push(boost_down())
-        elif self.is_clear():
+        if self.is_clear():
             self.send_quick_chat(QuickChats.CHAT_EVERYONE, QuickChats.Information_GoForIt)
+
+        if (self.is_clear() or self.get_stack_name() == "ball_recovery") and self.boost_amount == 'unlimited' and self.gravity.z > -700 and self.me.location.z > 750 and self.predictions['self_to_ball'] > 2560:
+            if not self.is_clear():
+                self.clear()
+
+            self.push(boost_down())
+            return
+
+        if self.is_clear():
+            if self.can_shoot is not None and self.me.boost < 50:
+                self.goto_nearest_boost()
+
+                if not self.is_clear():
+                    return
+
             self.backcheck()
 
     def get_shot(self, target=None, weight=None, cap=None):
@@ -648,13 +510,18 @@ class VirxEB(VirxERLU):
                 weight = get_weight(self, target)
 
             can_aerial = self.aerials
+            if len(self.friends) == 0:
+                can_aerial = can_aerial and (self.predictions['own_goal'] or (self.me.location.z > 300 and self.me.airborne))
             can_double_jump = self.double_jump and not self.me.airborne
             can_jump = self.jump and not self.me.airborne
             can_ground = self.ground_shot and not self.me.airborne
 
+            if not can_aerial and not can_double_jump and not can_jump and not can_ground:
+                return
+
             if target is self.anti_shot and self.me.location.y * side(self.team) > 5120:
                 target = None
-
+            
             shot = find_shot(self, target, weight=weight, cap_=6 if cap is None else cap, can_aerial=can_aerial, can_double_jump=can_double_jump, can_jump=can_jump, can_ground=can_ground) if target is not None else find_any_shot(self, cap_=3 if cap is None else cap, can_aerial=can_aerial, can_double_jump=can_double_jump, can_jump=can_jump, can_ground=can_ground)
 
             if shot is not None:
@@ -678,6 +545,9 @@ class VirxEB(VirxERLU):
                 self.push(shot['shot'])
                 self.send_quick_chat(QuickChats.CHAT_TEAM_ONLY, QuickChats.Information_IGotIt)
 
+    def get_stack_name(self):
+        return self.stack[0].__class__.__name__
+
     def smart_shot(self, target=None, weight=None, cap=None):
         shot = self.get_shot(target, weight, cap)
         if shot is not None:
@@ -692,7 +562,7 @@ class VirxEB(VirxERLU):
         return False
 
     def upgrade_shot(self, shot):
-        current_shot_name = self.stack[0].__class__.__name__
+        current_shot_name = self.get_stack_name()
         new_shot_name = shot.__class__.__name__
 
         if new_shot_name is current_shot_name:
