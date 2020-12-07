@@ -33,7 +33,7 @@ class VirxEB(VirxERLU):
         )
 
         self.defensive_shots = (
-            *self.offensive_shots,
+            self.offensive_shots[0],
             (Vector(4096, foe_team * 3968, 1900), Vector(2944, foe_team * 5120, 1900)),
             (Vector(-4096, foe_team * 3968, 1900), Vector(-2944, foe_team * 5120, 1900))
         )
@@ -73,6 +73,7 @@ class VirxEB(VirxERLU):
             self.predictions['enemy_time_to_ball'] = 7
             self.predictions['closest_enemy'] = math.inf
 
+        self.future_ball_location_slice = cap(round(self.predictions['enemy_time_to_ball'] * 60), 0, len(self.ball_prediction_struct.slices) - 1)
         self.dbg_2d(f"Predicted enemy time to ball: {round(self.predictions['enemy_time_to_ball'], 1)}")
 
         self.predictions['self_from_goal'] = self.friend_goal.location.flat_dist(self.me.location) if not self.me.demolished else math.inf
@@ -151,10 +152,33 @@ class VirxEB(VirxERLU):
             self.can_shoot = None
 
     def test(self):
+        # slope testing
+        """
+        ball_state = BallState(Physics(location=Vector3(*self.debug_vector), velocity=Vector3(0, 0, 0), angular_velocity=Vector3(0, 0, 0)))
+        self.set_game_state(GameState(ball=ball_state))
+
+        car_to_ball = self.ball.location - self.me.location
+        direction = car_to_ball.normalize()
+        shot_vector = direction.clamp2D((self.foe_goal.left_post - self.ball.location).normalize(), (self.foe_goal.right_post - self.ball.location).normalize())
+        car_to_ball = car_to_ball.flatten()
+        shot_vector = shot_vector.flatten()
+        
+        d = shot_vector.dot(car_to_ball)
+        e = abs(shot_vector.cross((0, 0, 1)).dot(car_to_ball))
+
+        slope = 10 * sign(d) if (e == 0) else max(min(d / e, 3), -3)
+        self.dbg_2d(f"Slope: {slope}")
+
+        shot = self.get_shot(self.offensive_shots[0], cap=6)
+        if shot is not None:
+            self.dbg_2d(f"Time: {shot['intercept_time'] - self.time}")
+        else:
+            self.dbg_2d(f"Time: impossible")
+        """
         # Enemy intercept prediction testing
         """
         if self.predictions['enemy_time_to_ball'] != 7:
-            intercept_slice = cap(round(self.predictions['enemy_time_to_ball'] * 60), 0, len(self.ball_prediction_struct.slices) - 1)
+            intercept_slice = self.future_ball_location_slice
             intercept_location = self.ball_prediction_struct.slices[intercept_slice].physics.location
             intercept_location = Vector(intercept_location.x, intercept_location.y, intercept_location.z)
             self.sphere(intercept_location, 92.75, self.renderer.black())
@@ -288,13 +312,14 @@ class VirxEB(VirxERLU):
                 self.dbg_3d(f"Can shoot: {self.can_shoot - self.time}")
 
             if self.predictions['enemy_time_to_ball'] != 7:
-                intercept_slice = cap(round(self.predictions['enemy_time_to_ball'] * 60), 0, len(self.ball_prediction_struct.slices) - 1)
-                intercept_location = self.ball_prediction_struct.slices[intercept_slice].physics.location
+                intercept_location = self.ball_prediction_struct.slices[self.future_ball_location_slice].physics.location
                 self.sphere(Vector(intercept_location.x, intercept_location.y, intercept_location.z), 92.75, self.renderer.red())
 
             if side(self.team) * self.ball.location.y >= self.defense_switch[self.playstyle] or self.predictions['own_goal']:
                 for shot in self.defensive_shots:
                     self.line(*shot, self.renderer.team_color(alt_color=True))
+
+                self.dbg_3d("(Defending)")
 
                 ball_loc = self.ball.location * side(self.team)
                 self_loc = self.me.location * side(self.team)
@@ -307,7 +332,7 @@ class VirxEB(VirxERLU):
                         return
 
                 # This is a list of all tm8s that are onside
-                team_to_ball = [car.location.flat_dist(self.ball.location) for car in self.friends if car.location.y * side(self.team) >= ball_loc.y + 95 and abs(car.location.x) < abs(agent.ball.location.x) - 250]
+                team_to_ball = [car.location.flat_dist(self.ball.location) for car in self.friends if car.location.y * side(self.team) >= ball_loc.y + 95 and abs(car.location.x) < abs(agent.ball.location.x) - 320]
                 self_to_ball = self.me.location.flat_dist(self.ball.location)
                 team_to_ball.append(self_to_ball)
                 team_to_ball.sort()
@@ -316,7 +341,7 @@ class VirxEB(VirxERLU):
                     self.can_shoot = None
 
                 if self.can_shoot is None and (self.is_clear() or self.odd_tick == 0):
-                    if ball_loc.y - self_loc.y < ball_loc.x - self_loc.x and (self.predictions['own_goal'] or (len(team_to_ball) > 1 and team_to_ball[math.ceil(len(team_to_ball) / 2)] + 10 > self_to_ball) or (len(team_to_ball) == 1 and self_to_ball < 2560) or (abs(ball_loc.x) < 900 and ball_loc.y > 1280)) and team_to_ball[0] is self_to_ball and self.smart_shot(weight=self.max_shot_weight - 3, cap=4):
+                    if ball_loc.y - self_loc.y < (ball_loc.x - self_loc.x) * 1.5 and (self.predictions['own_goal'] or (len(team_to_ball) > 1 and team_to_ball[math.ceil(len(team_to_ball) / 2)] + 10 > self_to_ball) or (len(team_to_ball) == 1 and self_to_ball < 2560) or (abs(ball_loc.x) < 900 and ball_loc.y > 1280)) and team_to_ball[0] is self_to_ball and self.smart_shot(self.anti_shot, weight=self.max_shot_weight - 3, cap=4):
                         return
 
                     if self_loc.y > ball_loc.y + 95:
@@ -352,7 +377,7 @@ class VirxEB(VirxERLU):
                 if self.me.airborne and self.is_clear():
                     self.push(recovery())
 
-                if not self.is_clear() and self.get_stack_name() == "short_shot" and self.me.location.y * side(self) < self.ball.location.y:
+                if not self.is_clear() and self.get_stack_name() == "short_shot" and self.me.location.y * side(self.team) < self.ball.location.y * side(self.team):
                     self.clear()
 
                 self.playstyles_switch[self.playstyle]()
@@ -366,7 +391,7 @@ class VirxEB(VirxERLU):
                 self.defensive_kickoff()
 
     def handle_quick_chat(self, index, team, quick_chat):
-        if self.kickoff_done and team is self.team and index is not self.index:
+        if self.kickoff_done and team is self.team and index is not self.index and len(self.friends) != 0:
             if quick_chat is QuickChats.Information_IGotIt:
                 if side(self.team) * self.ball.location.y < 4200 and not self.predictions['own_goal'] and not self.shooting:
                     self.can_shoot = self.time
@@ -384,31 +409,35 @@ class VirxEB(VirxERLU):
                 if self.playstyle is self.playstyles.Neutral:
                     self.can_shoot = None
                     if not self.shooting and self.me.boost >= 36:
-                        if not self.smart_shot(self.best_shot, cap=6) and not self.smart_shot(self.offensive_shots[0], cap=6) and not self.smart_shot(cap=6) and len(self.friends) > 1:
+                        if not self.smart_shot(self.best_shot, cap=6) and not self.smart_shot(self.offensive_shots[0], cap=6) and not self.smart_shot(self.anti_shot, cap=6) and len(self.friends) > 1:
                             self.push(short_shot(self.foe_goal.location))
 
     def defend(self):
-        if self.shooting and not self.predictions['own_goal'] and self.ball.location.y * side(self.team) < self.defense_switch[self.playstyle]:
-            self.clear()
+        if not self.me.airborne:
+            if self.shooting and not self.predictions['own_goal'] and self.ball.location.y * side(self.team) < self.defense_switch[self.playstyle]:
+                self.clear()
 
-        if self.is_clear():
-            ball = self.ball_prediction_struct.slices[cap(round(self.predictions['enemy_time_to_ball'] * 0.95) * 60, 0, len(self.ball_prediction_struct.slices) - 1)].physics.location
-            ball = Vector(ball.x, ball.y, ball.z)
-            if self.predictions['self_from_goal'] > 2560:
-                self.backcheck()
-            if self.me.boost < 72 and ball.y * side(self.team) < -1280:
-                self.goto_nearest_boost(only_small=ball.y * side(self.team) > -2560)
-            elif self.predictions['self_from_goal'] > 750:
-                self.backcheck()
-            else:
-                ball_f = self.ball_prediction_struct.slices[cap(round(self.predictions['enemy_time_to_ball'] * 0.95) * 60, 0, round((len(self.ball_prediction_struct.slices) - 1) / 2))].physics.location
-                ball_f = Vector(ball_f.x, ball_f.y, ball_f.z)
-                ball_f.y = cap(ball_f.y, -5120, 5120)
-                if ball_f.y * side(self.team) > -3840 and abs(self.me.forward.angle(ball_f)) >= 1:
-                    self.push(face_target(target=ball_f))
+            if self.is_clear():
+                ball = self.ball_prediction_struct.slices[cap(round(self.predictions['enemy_time_to_ball'] * 0.95) * 60, 0, len(self.ball_prediction_struct.slices) - 1)].physics.location
+                ball = Vector(ball.x, ball.y, ball.z)
+                if self.predictions['self_from_goal'] > 2560:
+                    self.backcheck()
+                if self.me.boost < 72 and ball.y * side(self.team) < -1280:
+                    self.goto_nearest_boost(only_small=ball.y * side(self.team) > -2560)
+                elif self.predictions['self_from_goal'] > 750:
+                    self.backcheck()
+                else:
+                    ball_f = self.ball_prediction_struct.slices[cap(round(self.predictions['enemy_time_to_ball'] * 0.95) * 60, 0, round((len(self.ball_prediction_struct.slices) - 1) / 2))].physics.location
+                    ball_f = Vector(ball_f.x, ball_f.y, ball_f.z)
+                    ball_f.y = cap(ball_f.y, -5120, 5120)
+                    if ball_f.y * side(self.team) > -3840 and abs(self.me.forward.angle(ball_f)) >= 1:
+                        self.push(face_target(target=ball_f))
 
     def neutral(self):
-        if not self.shooting and self.me.boost < 12:
+        if self.can_shoot is None and (self.is_clear() or self.odd_tick == 0) and self.smart_shot(self.best_shot, cap=5):
+            return
+                
+        if not self.me.airborne and not self.shooting and self.me.boost < 12:
             if self.is_clear():
                 self.goto_nearest_boost()
 
@@ -416,10 +445,7 @@ class VirxEB(VirxERLU):
                 return
 
         if self.can_shoot is None and (self.is_clear() or self.odd_tick == 0):
-            if self.smart_shot(self.best_shot, cap=5):
-                return
-
-            for i, shot in enumerate(self.defensive_shots if self.ball.location.y * side(self.team) > -2560 else self.offensive_shots):
+            for i, shot in enumerate(self.defensive_shots if self.ball.location.y * side(self.team) > -2560 and len(self.friends) != 0 else self.offensive_shots):
                 shot_weight = get_weight(self, index=i)
 
                 if self.shooting and shot_weight < self.shot_weight:
@@ -441,7 +467,7 @@ class VirxEB(VirxERLU):
             self.push(boost_down())
             return
 
-        if self.is_clear():
+        if self.is_clear() and not self.me.airborne:
             if self.can_shoot is not None and self.me.boost < 50:
                 self.goto_nearest_boost()
 
@@ -451,7 +477,7 @@ class VirxEB(VirxERLU):
             self.backcheck()
 
     def attack(self):
-        if (self.is_clear() or self.get_stack_name() == "short_shot") and self.me.boost < 12:
+        if (self.is_clear() or self.get_stack_name() == "short_shot") and not self.me.airborne and self.me.boost < 12:
             self.goto_nearest_boost(clear_on_valid=True)
 
             if not self.is_clear() and self.get_stack_name() == "goto_boost":
@@ -465,7 +491,7 @@ class VirxEB(VirxERLU):
             if self.smart_shot(self.best_shot, cap=6):
                 return
 
-            for i, shot in enumerate(self.defensive_shots if self.ball.location.y * side(self.team) > -2560 else self.offensive_shots):
+            for i, shot in enumerate(self.defensive_shots if self.ball.location.y * side(self.team) > -2560 and len(self.friends) != 0 else self.offensive_shots):
                 shot_weight = get_weight(self, index=i)
 
                 if self.shooting and shot_weight < self.shot_weight:
@@ -480,7 +506,7 @@ class VirxEB(VirxERLU):
                         self.shoot_from(shot, clear_on_valid=True)
                     return
 
-            if not self.predictions['goal'] and (self.is_clear() or self.shot_weight == self.max_shot_weight - 3) and self.me.location.y * side(self.team) > self.ball.location.y * side(self.team) + 1280:
+            if not self.predictions['goal'] and (self.is_clear() or self.shot_weight == self.max_shot_weight - 3) and self.me.location.y * side(self.team) > (self.ball.location.y * side(self.team)) + 1280:
                 shot = self.get_shot(self.anti_shot, weight=self.max_shot_weight - 3, cap=6)
                 if shot is not None:
                     self.shoot_from(shot)
@@ -495,7 +521,7 @@ class VirxEB(VirxERLU):
             self.push(boost_down())
             return
 
-        if self.is_clear():
+        if self.is_clear() and not self.me.airborne:
             if self.can_shoot is not None and self.me.boost < 50:
                 self.goto_nearest_boost()
 
