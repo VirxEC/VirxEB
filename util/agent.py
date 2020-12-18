@@ -150,6 +150,7 @@ class VirxERLU(BaseAgent):
         self.best_shot_value = 92.75
 
         self.future_ball_location_slice = 180
+        self.min_intercept_slice = 180
 
         self.playstyles = Playstyle
         self.playstyle = self.playstyles.Neutral
@@ -361,16 +362,16 @@ class VirxERLU(BaseAgent):
                         center = car.local(car.hitbox.offset) + car.location
                         top = car.up * (car.hitbox.height / 2)
                         front = car.forward * (car.hitbox.length / 2)
-                        left = car.left * (car.hitbox.width / 2)
+                        right = car.right * (car.hitbox.width / 2)
 
-                        bottom_front_right = center - top + front - left
-                        bottom_front_left = center - top + front + left
-                        bottom_back_right = center - top - front - left
-                        bottom_back_left = center - top - front + left
-                        top_front_right = center + top + front - left
-                        top_front_left = center + top + front + left
-                        top_back_right = center + top - front - left
-                        top_back_left = center + top - front + left
+                        bottom_front_right = center - top + front + right
+                        bottom_front_left = center - top + front - right
+                        bottom_back_right = center - top - front + right
+                        bottom_back_left = center - top - front - right
+                        top_front_right = center + top + front + right
+                        top_front_left = center + top + front - right
+                        top_back_right = center + top - front + right
+                        top_back_left = center + top - front - right
 
                         hitbox_color = self.renderer.team_color(alt_color=True)
 
@@ -464,7 +465,7 @@ class car_object:
         return (
             tuple(self.location),
             tuple(self.velocity),
-            (tuple(self.forward), tuple(self.left), tuple(self.up)),
+            (tuple(self.forward), tuple(self.right), tuple(self.up)),
             tuple(self.angular_velocity),
             1 if self.demolished else 0,
             1 if self.airborne and not force_on_ground else 0,
@@ -497,9 +498,9 @@ class car_object:
         return self.orientation.forward
 
     @property
-    def left(self):
-        # A vector pointing left relative to the cars orientation. Its magnitude == 1
-        return self.orientation.left
+    def right(self):
+        # A vector pointing right relative to the cars orientation. Its magnitude == 1
+        return self.orientation.right
 
     @property
     def up(self):
@@ -611,16 +612,16 @@ class Matrix3:
             Vector(CY*SP*SR-CR*SY, SY*SP*SR+CR*CY, -CP*SR),
             Vector(-CR*CY*SP-SR*SY, -CR*SY*SP+SR*CY, CP*CR)
         ]
-        self.forward, self.left, self.up = self.data
+        self.forward, self.right, self.up = self.data
 
     def __getitem__(self, key):
         return self.data[key]
 
     def __str__(self):
-        return f"[{self.forward}\n{self.left}\n{self.up}]"
+        return f"[{self.forward}\n{self.right}\n{self.up}]"
 
     def dot(self, vector):
-        return Vector(self.forward.dot(vector), self.left.dot(vector), self.up.dot(vector))
+        return Vector(self.forward.dot(vector), self.right.dot(vector), self.up.dot(vector))
 
     def det(self):
         return self[0][0] * self[1][1] * self[2][2] + self[0][1] * self[1][2] * self[2][0] + \

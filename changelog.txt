@@ -19,7 +19,6 @@ moved the prediction thread to the main thread
 more aggressive 1's play
 improved corner kickoff
 if VirxEB is already flying, then the minimum aerial height is now 150
-much better shadowing
 steering now acts like in-air yawing when the handbrake is active
 changed of finding any shot so now it's an anti-shot unless the bot is in the goal
 adjustment system now considers the needed jumping time
@@ -35,12 +34,21 @@ new Vector class that's a wrapper for numpy
 new method in the Vector class - scale
 removed methods tuple and list from the Vector class
 new util methods dodge_impulse, turn radius, curvature, and is_inside_turn_radius
-better shadowing
 removed int method from the Vector class in favor of doing round(Vector)
-improved the strategy
 better boost management
 better wave dashes
 new back offset kickoffs
 new defensive kickoffs
 partial heatseaker support
 new logic for when to employ flips / wave dashes
+better shadowing logic
+better retreat logic
+improved the strategy
+shot finding optimizations
+more measures to prevent the bot from traveling on the walls
+double_jump and Aerial now target the offset target and not shot_vector
+adjusted the PD controller
+properly adjusted Matrix3's left property to the now correctly named 'right'
+new util 'throttle_acceleration'
+better boost/throttle decision making in defaultThrottle
+new, better back kickoff
