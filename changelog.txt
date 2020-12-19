@@ -1,54 +1,5 @@
-jump_shot sometimes hits the ball much harder
-removed the atba routine (just use short_shot)
-better short_shot
-better braking in the retreat routine
-better offensive rotations
-wall recoveries
-better adjustment system for jump_shot and double_jump
-on-the-fly shot vector calculations
-double_jump sometimes hits the ball much harder
-jump_shot has more accurate jumps
-fixed braking in the goto routine
-errors are now printed to a traceback file(s)
-pathfinding will do flips when they need to cover a large distance
-removed dribbles from jump_shot
-added new routine 'ground_shot'
-defaultThrottle can now handle handbrake with defaultPD's target_angles and the local target
-new util `defaultDrive` - it combines defaultPD and defaultThrottle, with the ability to drive backwards
-moved the prediction thread to the main thread
-more aggressive 1's play
-improved corner kickoff
-if VirxEB is already flying, then the minimum aerial height is now 150
-steering now acts like in-air yawing when the handbrake is active
-changed of finding any shot so now it's an anti-shot unless the bot is in the goal
-adjustment system now considers the needed jumping time
-fixed bug with double_jump's update method
-removed the utils backsolve, post_correction and shot_valid
-added util perimeter_of_ellipse
-added new offensive shots that are on the goal walls
-new util cap_in_field
-the start slice (when searching for shots) is now determined by the bot's minimum time to ball value
-backwards double jump shots
-removed the block_ground_shot routine
-new Vector class that's a wrapper for numpy
-new method in the Vector class - scale
-removed methods tuple and list from the Vector class
-new util methods dodge_impulse, turn radius, curvature, and is_inside_turn_radius
-removed int method from the Vector class in favor of doing round(Vector)
-better boost management
-better wave dashes
-new back offset kickoffs
-new defensive kickoffs
-partial heatseaker support
-new logic for when to employ flips / wave dashes
-better shadowing logic
-better retreat logic
-improved the strategy
-shot finding optimizations
-more measures to prevent the bot from traveling on the walls
-double_jump and Aerial now target the offset target and not shot_vector
-adjusted the PD controller
-properly adjusted Matrix3's left property to the now correctly named 'right'
-new util 'throttle_acceleration'
-better boost/throttle decision making in defaultThrottle
-new, better back kickoff
+Errors are no longer thrown when VirxEB has teammates
+Only 1 bot goes for kickoff
+I hate 3's
+Playstyle selection is more like 1's in 2's & 3's
+Few defensive changes
