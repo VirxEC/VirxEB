@@ -1,5 +1,5 @@
 from util.routines import Aerial, double_jump, ground_shot, jump_shot, virxrlcu
-from util.utils import Vector, math, side, cap
+from util.utils import Vector, cap, math, side
 
 
 def find_ground_shot(agent, target, weight=None, cap_=6):

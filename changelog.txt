@@ -1,5 +1,5 @@
-Errors are no longer thrown when VirxEB has teammates
-Only 1 bot goes for kickoff
-I hate 3's
-Playstyle selection is more like 1's in 2's & 3's
-Few defensive changes
+Fixed error when VirxEB has more than 2 teammates
+Aerials should overshoot their target much less
+VirxEB is now a standalone bot
+Better boost control
+Fixed error that might occur during kickoff

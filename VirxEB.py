@@ -4,10 +4,14 @@ import itertools
 from rlbot.utils.structures.quick_chats import QuickChats
 
 import virxrlcu
-from util.agent import Vector, VirxERLU, math
-from util.routines import (ball_recovery, boost_down, corner_kickoff, corner_kickoff_boost,
-                           face_target, generic_kickoff, goto, goto_boost, recovery, retreat, shadow,
-                           short_shot, wave_dash, flip, ground_shot, back_offset_kickoff, back_offset_kickoff_boost, back_kickoff)
+# don't import like this, kids...
+from util.agent import Vector, VirxERLU, math, run_bot
+from util.routines import (back_kickoff, back_offset_kickoff,
+                           back_offset_kickoff_boost, ball_recovery,
+                           boost_down, corner_kickoff, corner_kickoff_boost,
+                           face_target, flip, generic_kickoff, goto,
+                           goto_boost, ground_shot, recovery, retreat, shadow,
+                           short_shot, wave_dash)
 from util.tools import find_any_shot, find_shot
 from util.utils import (almost_equals, cap, get_weight, peek_generator,
                         send_comm, side, sign)
@@ -381,7 +385,7 @@ class VirxEB(VirxERLU):
     def handle_match_comm(self, msg):
         if not self.kickoff_done and msg.get("VirxERLU") is not None and msg['VirxERLU']['team'] is self.team:
             msg = msg['VirxERLU']
-            if msg.get("attacking", False) and msg['index'] < self.index and self.get_stack_name() in {"corner_kickoff", "back_offset_kickoff", "generic_kickoff"}:
+            if msg.get("attacking", False) and msg['index'] < self.index and (self.is_clear() or self.get_stack_name() in {"corner_kickoff", "back_offset_kickoff", "generic_kickoff"}):
                 self.clear()
                 self.defensive_kickoff()
 
@@ -755,3 +759,7 @@ class VirxEB(VirxERLU):
                 return True
 
         return False
+
+
+if __name__ == "__main__":
+    run_bot(VirxEB)
