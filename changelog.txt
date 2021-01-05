@@ -1,5 +1,8 @@
-Fixed error when VirxEB has more than 2 teammates
-Aerials should overshoot their target much less
-VirxEB is now a standalone bot
-Better boost control
-Fixed error that might occur during kickoff
+New delta time calculation to help with car control
+New car ability profiler
+Fixed error in the back and back offset kickoffs
+More data available in car_object
+New class last_touch
+More data available on the latest touch in ball_object
+Corner kickoff fix
+Better management of bots in the retreat routine

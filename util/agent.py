@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import itertools
+import json
 import math
 import os
+import re
+import string
 from datetime import datetime
 from enum import Enum
 from time import time_ns
@@ -25,8 +28,9 @@ class Playstyle(Enum):
 class VirxERLU(StandaloneBot):
     # Massive thanks to ddthj/GoslingAgent (GitHub repo) for the basis of VirxERLU
     def initialize_agent(self):
-        self.tournament = False
         self.startup_time = time_ns()
+        self.tournament = False
+        self.true_name = re.split(r' \(\d+\)$', self.name)[0]
 
         self.debug = [[], []]
         self.debugging = not self.tournament
@@ -149,6 +153,14 @@ class VirxERLU(StandaloneBot):
         self.shooting = False
         self.odd_tick = -1
         self.best_shot_value = 92.75
+        self.delta_time = 1 / 120
+
+        self.profiler_threshold = 0.85
+        self.profiler_loss = 0.005
+        self.profiler_gain = 0.21
+        self.profiler_last_save = 0
+        self.last_ball_touch_time = -1
+        self.unpause_timer = -1
 
         self.future_ball_location_slice = 180
         self.min_intercept_slice = 180
@@ -174,7 +186,12 @@ class VirxERLU(StandaloneBot):
 
     def get_ready(self, packet):
         field_info = self.get_field_info()
-        self.boosts = tuple(boost_object(i, boost.location, boost.is_full_boost) for i, boost in enumerate(field_info.boost_pads))
+        self.boosts = tuple(boost_object(i, field_info.boost_pads[i].location, field_info.boost_pads[i].is_full_boost) for i in range(field_info.num_boosts))
+        if len(self.boosts) != 34:
+            print(f"There are {len(self.boosts)} boost pads! @Tarehart REEEEE!")
+            for i, boost in enumerate(self.boosts):
+                print(f"{boost.location} ({i})")
+
         self.refresh_player_lists(packet)
         self.ball.update(packet)
 
@@ -187,12 +204,37 @@ class VirxERLU(StandaloneBot):
             print(f"{self.name}: Check me out at https://www.virxcase.dev!!!")
 
         self.ready = True
+    
+    def save_profiles(self):
+        if self.me.name != self.me.true_name:
+            return
+
+        for car in self.friends + self.foes:
+            if self.name == self.true_name:
+                with open(car.profile_path, "w") as f:
+                    json.dump(car.profile, f)
+            
+        self.profiler_last_save = self.time
 
     def refresh_player_lists(self, packet):
         # Useful to keep separate from get_ready because humans can join/leave a match
         self.friends = tuple(car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team is self.team and i != self.index)
         self.foes = tuple(car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team != self.team)
         self.me = car_object(self.index, packet)
+
+        len_friends = str(len(self.friends))
+        self.me.profile[len_friends] = [1, 1, 1, 1]
+
+        for car in self.friends:
+            if car.profile.get(len_friends) is None:
+                car.profile[len_friends] = [1, 1, 1, 1]
+
+        len_foes = str(len(self.foes) - 1)
+        for car in self.foes:
+            if car.profile.get(len_foes) is None:
+                car.profile[len_foes] = [1, 1, 1, 1]
+
+        self.save_profiles()
 
     def push(self, routine):
         self.stack.append(routine)
@@ -262,12 +304,14 @@ class VirxERLU(StandaloneBot):
         self.me.update(packet)
         self.game.update(self.team, packet)
 
+        self.delta_time = self.game.time - self.time
         self.time = self.game.time
         self.gravity = self.game.gravity
 
         # When a new kickoff begins we empty the stack
         if not self.kickoff_flag and self.game.round_active and self.game.kickoff:
             self.kickoff_done = False
+            self.unpause_timer = self.time
             self.clear()
 
         # Tells us when to go for kickoff
@@ -281,6 +325,50 @@ class VirxERLU(StandaloneBot):
             self.odd_tick = 0
 
         self.ball_prediction_struct = self.get_ball_prediction_struct()
+
+        if self.delta_time > 0 and self.game.round_active and self.time - self.unpause_timer > 4 and len(self.foes) > 0:
+            loss = self.profiler_loss * self.delta_time
+            lens = [str(len(self.friends)), str(len(self.foes) - 1)]
+
+            dbz = self.ball.location.z
+            divisors = [
+                dbz <= 126.75,
+                126.75 < dbz <= 312.75,
+                312.75 < dbz <= 542.75,
+                542.75 < dbz
+            ]
+            section = divisors.index(True)
+
+            for car in self.friends:
+                if not car.demolished:
+                    car.profile[lens[0]][section] = max(car.profile[lens[0]][section] - loss, 0)
+
+            for car in self.foes:
+                if not car.demolished:
+                    car.profile[lens[1]][section] = max(car.profile[lens[1]][section] - loss, 0)
+
+            gain = self.profiler_gain + loss
+
+            if self.ball.last_touch.time != self.last_ball_touch_time:
+                if self.ball.last_touch.car.index != self.index:
+                    if self.ball.last_touch.car.team == self.team:
+                        index = None
+                        for i, car in enumerate(self.friends):
+                            if car.index == self.ball.last_touch.car.index:
+                                index = i
+                                
+                        self.friends[index].profile[lens[0]][0 if not car.airborne else section] = min(self.friends[index].profile[lens[0]][section] + gain, 1)
+                    else:
+                        index = None
+                        for i, car in enumerate(self.foes):
+                            if car.index == self.ball.last_touch.car.index:
+                                index = i
+                                
+                        self.foes[index].profile[lens[1]][0 if not car.airborne else section] = min(self.foes[index].profile[lens[1]][section] + gain, 1)
+                self.last_ball_touch_time = self.ball.last_touch.time
+
+            if self.time - self.profiler_last_save > 10:
+                self.save_profiles()
 
     def get_weight(self, shot=None, index=None):
         if index is not None:
@@ -381,7 +469,22 @@ class VirxERLU(StandaloneBot):
                         self.line(bottom_back_right, bottom_front_right, hitbox_color)
                         self.line(top_back_right, top_front_right, hitbox_color)
 
+                    # if self.odd_tick == 0 and self.true_name == self.name:
+                    #     profiles = []
+                    #     for car in self.foes:
+                    #         profile = [round(car.profile[str(len(self.foes) - 1)][i], 3) for i in range(4)]
+                    #         profiles.append(f"{car.name} profile: {profile}")
+
+                    #     for car in self.friends:
+                    #         profile = [round(car.profile[str(len(self.friends))][i], 3) for i in range(4)]
+                    #         profiles.append(f"{car.name} profile: {profile}")
+
+                    #     print(" ".join(profiles))
+
                     if self.debug_2d_bool:
+                        if self.delta_time != 0:
+                            self.debug[1].insert(0, f"TPS: {round(1 / self.delta_time)}")
+                        
                         if not self.is_clear() and self.stack[0].__class__.__name__ in {'Aerial', 'jump_shot', 'ground_shot', 'double_jump'}:
                             self.dbg_2d(round(self.stack[0].intercept_time - self.time, 4))
 
@@ -416,10 +519,13 @@ class VirxERLU(StandaloneBot):
         pass
 
 
+CHARS = list(string.ascii_letters) + list(string.digits) + list(string.punctuation) + [" "]
+
+
 class car_object:
     # The carObject, and kin, convert the gametickpacket in something a little friendlier to use,
-    # and are updated by GoslingAgent as the game runs
-    def __init__(self, index, packet=None):
+    # and are updated by VirxERLU as the game runs
+    def __init__(self, index, packet=None, profile=True):
         self.location = Vector()
         self.orientation = Matrix3()
         self.velocity = Vector()
@@ -434,12 +540,40 @@ class car_object:
 
         if packet is not None:
             car = packet.game_cars[self.index]
+
+            self.name = car.name
+            self.true_name = re.split(r' \(\d+\)$', self.name)[0]  # e.x. 'ABot (12)' will instead be just 'ABot'
+            self.team = car.team
             self.hitbox = hitbox_object(car.hitbox.length, car.hitbox.width, car.hitbox.height, Vector(car.hitbox_offset.x, car.hitbox_offset.y, car.hitbox_offset.z))
-            self.offset = self.hitbox.offset  # please use self.hitbox.offset and not self.offset
+
             self.update(packet)
-        else:
-            self.hitbox = hitbox_object()
-            self.offset = self.hitbox.offset  # please use self.hitbox.offset and not self.offset
+
+            if not profile:
+                self.profile = {}
+                return
+
+            uuid = int("".join(reversed(list(str(sum(reversed(tuple(int(str(CHARS.index(char) if char in CHARS else len(CHARS)) + "0" * i) for i, char in enumerate(self.true_name)))))))))
+            self.profile_path = os.path.dirname(__file__) + f'/../profiles/{uuid}.cpf'
+            if os.path.isfile(self.profile_path):
+                with open(self.profile_path, "r") as f:
+                    while 1:
+                        try:
+                            self.profile = json.load(f)
+                            break
+                        except Exception:
+                            continue
+            else:
+                self.profile = {}
+                with open(self.profile_path, "w") as f:
+                    json.dump(self.profile, f)
+
+            return
+
+        self.name = None
+        self.true_name = None
+        self.team = -1
+        self.hitbox = hitbox_object()
+        self.profile = {}
 
     def local(self, value):
         # Generic localization
@@ -523,10 +657,28 @@ class hitbox_object:
         return (self.length, self.width, self.height)[index]
 
 
+class last_touch:
+    def __init__(self):
+        self.location = Vector()
+        self.normal = Vector()
+        self.time = -1
+        self.car = None
+    
+    def update(self, packet):
+        touch = packet.game_ball.latest_touch
+        self.location = touch.hit_location
+        self.normal = touch.hit_normal
+        self.time = touch.time_seconds
+        self.car = car_object(touch.player_index, packet, profile=False)
+
+
 class ball_object:
     def __init__(self):
         self.location = Vector()
         self.velocity = Vector()
+        self.last_touch = last_touch()
+        
+        # deprecated! use last_touch instead!
         self.latest_touched_time = 0
         self.latest_touched_team = 0
 
@@ -540,6 +692,9 @@ class ball_object:
         ball = packet.game_ball
         self.location = Vector(ball.physics.location.x, ball.physics.location.y, ball.physics.location.z)
         self.velocity = Vector(ball.physics.velocity.x, ball.physics.velocity.y, ball.physics.velocity.z)
+        self.last_touch.update(packet)
+
+        # deprecated! use last_touch instead!
         self.latest_touched_time = ball.latest_touch.time_seconds
         self.latest_touched_team = ball.latest_touch.team
 

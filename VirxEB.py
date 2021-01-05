@@ -42,7 +42,7 @@ class VirxEB(VirxERLU):
         )
 
         self.best_shot = (Vector(foe_team * 793, foe_team * 5213, 321.3875), Vector(-foe_team * 793, foe_team * 5213, 321.3875))
-        self.anti_shot = (Vector(-team * 2048, team * 5120, 2000), Vector(team * 2048, team * 5120, 2000))
+        self.anti_shot = (Vector(-team * 2048, team * 5120, 800), Vector(team * 2048, team * 5120, 800))
 
         self.max_shot_weight = 4
         self.playstyles_switch = {
@@ -246,6 +246,8 @@ class VirxEB(VirxERLU):
         g_me = car.get_raw(self, car.location.z < 300)
         is_on_ground = g_me[5] == 0
 
+        profile = [profile > self.profiler_threshold for profile in car.profile[str(len(self.friends)) if car.team == self.team else str(len(self.foes) - 1)]]
+
         game_info = (
             self.boost_accel,
             self.best_shot_value
@@ -270,7 +272,7 @@ class VirxEB(VirxERLU):
 
             # Check if we can make a shot at this slice
             # This operation is very expensive, so we use C to improve run time
-            shot = virxrlcu.parse_slice_for_shot(is_on_ground, is_on_ground, is_on_ground, 1, time_remaining, *game_info, gravity, ball_info, g_me)
+            shot = virxrlcu.parse_slice_for_shot(is_on_ground and profile[0], is_on_ground and profile[1], is_on_ground and profile[2], profile[3], time_remaining, *game_info, gravity, ball_info, g_me)
 
             if shot['found'] == 1:
                 return time_remaining
@@ -533,6 +535,13 @@ class VirxEB(VirxERLU):
 
             self.backcheck()
 
+    def can_any_foe_aerial(self):
+        len_fs = str(len(self.foes) - 1)
+        for car in self.foes:
+            if car.profile[len_fs][3] > self.profiler_threshold:
+                return True
+        return False
+
     def get_shot(self, target=None, weight=None, cap=None):
         if self.predictions['self_min_time_to_ball'] == 7:
             return
@@ -546,8 +555,10 @@ class VirxEB(VirxERLU):
             can_jump = self.jump
             can_ground = self.ground_shot
 
+            if len(self.foes) <= 1:
+                can_aerial = can_aerial and (self.predictions['own_goal'] or (self.me.location.z > 300 and self.me.airborne) or (target is self.best_shot and not self.can_any_foe_aerial()))
+            
             if len(self.friends) == 0:
-                can_aerial = can_aerial and (self.predictions['own_goal'] or (self.me.location.z > 300 and self.me.airborne))
                 self_intercept_location = self.ball_prediction_struct.slices[self.min_intercept_slice].physics.location
                 self_intercept_location = Vector(abs(self_intercept_location.x), self_intercept_location.y * side(self.team))
                 can_double_jump = can_double_jump and (self_intercept_location.x < 1300 or self_intercept_location.y > 3840)

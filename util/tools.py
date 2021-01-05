@@ -186,9 +186,9 @@ def get_slices(agent, cap_, weight=None, start_slice=12):
 
     ball_y = agent.ball.location.y * side(agent.team)
     foes = len(tuple(foe for foe in agent.foes if not foe.demolished and foe.location.y * side(agent.team) < ball_y + 75))
-    if not agent.predictions['goal'] and agent.ball_to_goal > 2560 and agent.ball.location.dist(agent.foe_goal.location) > 900 and foes > 0:
-        factor = 1.2 - 0.04 * foes
-        cap_ = min(agent.predictions['enemy_time_to_ball'] * factor, cap_)
+    if foes > 0:
+        factor = 1.2 - (0.04 * foes)
+        cap_ = min(agent.predictions['enemy_time_to_ball'] * factor + 0.4, cap_)
 
     end_slices = None
 
