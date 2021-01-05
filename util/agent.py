@@ -70,9 +70,10 @@ class VirxERLU(StandaloneBot):
             "self_min_time_to_ball": 7
         }
 
-        self.match_comms = MatchComms(self)
-        self.print("Starting the match communication handler...")
-        self.match_comms.start()
+        if self.matchcomms_root is not None:
+            self.match_comms = MatchComms(self)
+            self.print("Starting the match communication handler...")
+            self.match_comms.start()
 
         self.ball_prediction_struct = None
 
