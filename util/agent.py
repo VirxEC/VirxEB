@@ -13,10 +13,14 @@ from traceback import print_exc
 from typing import List, Tuple
 
 import numpy as np
-from gui import Gui
-from match_comms import MatchComms
 from rlbot.agents.base_agent import SimpleControllerState
 from rlbot.agents.standalone.standalone_bot import StandaloneBot, run_bot
+
+TOURNAMENT_MODE = True
+
+if not TOURNAMENT_MODE:
+    from gui import Gui
+    from match_comms import MatchComms
 
 
 class Playstyle(Enum):
@@ -29,7 +33,7 @@ class VirxERLU(StandaloneBot):
     # Massive thanks to ddthj/GoslingAgent (GitHub repo) for the basis of VirxERLU
     def initialize_agent(self):
         self.startup_time = time_ns()
-        self.tournament = False
+        self.tournament = TOURNAMENT_MODE
         self.true_name = re.split(r' \(\d+\)$', self.name)[0]
 
         self.debug = [[], []]
@@ -70,10 +74,15 @@ class VirxERLU(StandaloneBot):
             "self_min_time_to_ball": 7
         }
 
-        if self.matchcomms_root is not None:
-            self.match_comms = MatchComms(self)
-            self.print("Starting the match communication handler...")
-            self.match_comms.start()
+        if not self.tournament:
+            self.gui = Gui(self)
+            self.print("Starting the GUI...")
+            self.gui.start()
+
+            if self.matchcomms_root is not None:
+                self.match_comms = MatchComms(self)
+                self.print("Starting the match communication handler...")
+                self.match_comms.start()
 
         self.ball_prediction_struct = None
 
@@ -124,11 +133,6 @@ class VirxERLU(StandaloneBot):
             self.print("Preparing for heatseeker")
             self.goalie = True
 
-        if not self.tournament:
-            self.gui = Gui(self)
-            self.print("Starting the GUI...")
-            self.gui.start()
-
         self.friends = ()
         self.foes = ()
         self.me = car_object(self.index)
@@ -177,13 +181,13 @@ class VirxERLU(StandaloneBot):
         if not self.tournament:
             self.gui.stop()
 
-        self.match_comms.stop()
+            if self.matchcomms_root is not None:
+                self.match_comms.stop()
 
-    @staticmethod
-    def is_hot_reload_enabled():
-        # The threads that VirxERLU uses aren't compatible with hot reloading
-        # Use the Continue and Spawn option in the GUI instead
-        return False
+    def is_hot_reload_enabled(self):
+        # The tkinter GUI isn't compatible with hot reloading
+        # Use the Continue and Spawn option in the RLBotGUI instead
+        return self.tournament
 
     def get_ready(self, packet):
         field_info = self.get_field_info()
