@@ -133,7 +133,7 @@ class double_jump:
 
             # The adjustment causes the car to circle around the dodge point in an effort to line up with the shot vector
             # The adjustment slowly decreases to 0 as the bot nears the time to jump
-            adjustment = car_to_offset_target.angle2D(self.shot_vector) * Tj * 500  # size of adjustment
+            adjustment = car_to_offset_target.angle2D(self.shot_vector) * Tj * 1000  # size of adjustment
             # we don't adjust the final target if we are already jumping
             final_target += car_to_dodge_perp.normalize() * adjustment
 
@@ -679,21 +679,7 @@ class face_target:
 
     @staticmethod
     def get_ball_target(agent):
-        ball = None
-
-        if not agent.predictions['own_goal']:
-            ball = agent.ball_prediction_struct.slices[agent.min_intercept_slice].physics.location
-        else:
-            for ball_slice in agent.ball_prediction_struct.slices[30::12]:
-                location = ball_slice.physics.location.y * side(agent.team)
-
-                if location >= 5212.75:
-                    ball = ball_slice.physics.location
-                    break
-
-            if ball is None:
-                ball = agent.ball.location.flatten()
-
+        ball = agent.ball.location if agent.predictions['self_min_time_to_ball'] > 7 else agent.ball_prediction_struct.slices[agent.min_intercept_slice].physics.location
         return Vector(ball.x, ball.y)
 
     def run(self, agent: VirxERLU):
@@ -806,7 +792,7 @@ class jump_shot:
 
             # The adjustment causes the car to circle around the dodge point in an effort to line up with the shot vector
             # The adjustment slowly decreases to 0 as the bot nears the time to jump
-            adjustment = car_to_offset_target.angle2D(self.shot_vector) * Tj * 500  # size of adjustment
+            adjustment = car_to_offset_target.angle2D(self.shot_vector) * Tj * 1000  # size of adjustment
             final_target += car_to_offset_perp.normalize() * adjustment
 
         distance_remaining = final_target.flat_dist(agent.me.location)
@@ -989,7 +975,7 @@ class ground_shot:
 
                 # The adjustment causes the car to circle around the dodge point in an effort to line up with the shot vector
                 # The adjustment slowly decreases to 0 as the bot nears the time to jump
-                adjustment = car_to_offset_target.angle2D(self.shot_vector) * T * 500  # size of adjustment
+                adjustment = car_to_offset_target.angle2D(self.shot_vector) * T * 1000  # size of adjustment
                 # we don't adjust the final target if we are already jumping
                 final_target += car_to_offset_perp.normalize() * adjustment
 
@@ -1193,7 +1179,7 @@ class back_offset_kickoff:
             self.do_boost = agent.me.boost != 0
             agent.controller.boost = True
     
-        if self.flip is None and agent.me.location.flat_dist(self.boost_pad.location + Vector(y=320 * side(agent.team))) > 480:
+        if self.flip is None and agent.me.location.flat_dist(self.boost_pad.location + Vector(y=320 * side(agent.team))) > 380:
             defaultPD(agent, agent.me.local_location(self.boost_pad.location + Vector(y=320 * side(agent.team))))
         elif self.flip_done is None:
             if self.flip is None:
