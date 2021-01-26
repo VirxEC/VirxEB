@@ -1,20 +1,27 @@
-Aerials should overshoot their target much less
 VirxEB is now a standalone bot
-Better boost control
-Fixed error that might occur during kickoff
+Better boost/throttle control
 New delta time calculation to help with car control
-Aerials should overshoot their target much less	New car ability profiler
-VirxEB is now a standalone bot	
+Aerials should overshoot their target much less
+New car ability profiler
 Fixed error in the back kickoff
 Better boost control
 More data available in car_object
-Fixed error that might occur during kickoff
+Fixed error that might occur during certain kickoffs
 New class last_touch
 More data available on the latest touch in ball_object
-Corner kickoff fix
 Better management of bots in the retreat routine
-Standalone matchcomms fix
 Optional hot-reloading support
-Much more accurate shots
-Back offset kickoff fix
 Fixed facing the ball
+Better boost collection
+Back kickoff fix
+Much more accurate shots
+goto_boost now pops if the bot has 100 boost
+Fixed half-flips
+goto_boost now picks up small pads more reliably
+Better wave dashes
+Slightly better shadowing/retreating
+Slightly more aerials in 1's
+Back offset kickoff fix
+Corner kickoff fix
+General work on aerials
+Much better speed controller

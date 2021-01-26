@@ -20,7 +20,7 @@ from rlbot.agents.standalone.standalone_bot import StandaloneBot, run_bot
 TOURNAMENT_MODE = False
 
 # Make False to enable hot reloading, at the cost of the GUI
-EXTRA_DEBUGGING = False
+EXTRA_DEBUGGING = True
 
 if not TOURNAMENT_MODE and EXTRA_DEBUGGING:
     from gui import Gui
@@ -46,7 +46,7 @@ class VirxERLU(StandaloneBot):
         self.debug_lines = True
         self.debug_3d_bool = True
         self.debug_stack_bool = True
-        self.debug_2d_bool = False
+        self.debug_2d_bool = self.true_name == self.name
         self.show_coords = False
         self.debug_ball_path = False
         self.debug_ball_path_precision = 10
@@ -129,10 +129,18 @@ class VirxERLU(StandaloneBot):
             "heatseeker"
         )
 
+        ball_size = (
+            92.75,
+            69.25,
+            139.5,
+            239.75
+        )
+
         self.gravity = gravity[mutators.GravityOption()]
         self.boost_accel = boost_accel[mutators.BoostStrengthOption()]
         self.boost_amount = boost_amount[mutators.BoostOption()]
         self.game_mode = game_mode[match_settings.GameMode()]
+        self.ball_radius = ball_size[mutators.BallSizeOption()]
 
         if self.game_mode == "heatseeker":
             self.print("Preparing for heatseeker")
@@ -162,10 +170,9 @@ class VirxERLU(StandaloneBot):
         self.kickoff_done = True
         self.shooting = False
         self.odd_tick = -1
-        self.best_shot_value = 92.75
         self.delta_time = 1 / 120
 
-        self.profiler_threshold = 0.85
+        self.profiler_threshold = 0.8
         self.profiler_loss = 0.005
         self.profiler_gain = 0.21
         self.profiler_last_save = 0
@@ -338,7 +345,7 @@ class VirxERLU(StandaloneBot):
 
         if self.delta_time > 0 and self.game.round_active and self.time - self.unpause_timer > 4 and len(self.foes) > 0:
             loss = self.profiler_loss * self.delta_time
-            lens = [str(len(self.friends)), str(len(self.foes) - 1)]
+            lens = (str(len(self.friends)), str(len(self.foes) - 1))
 
             dbz = self.ball.location.z
             divisors = [
@@ -351,11 +358,11 @@ class VirxERLU(StandaloneBot):
 
             for car in self.friends:
                 if not car.demolished:
-                    car.profile[lens[0]][section] = max(car.profile[lens[0]][section] - loss, 0)
+                    car.profile[lens[0]][section] = max(car.profile[lens[0]][section] - (loss / (len(self.friends) + 1)), 0)
 
             for car in self.foes:
                 if not car.demolished:
-                    car.profile[lens[1]][section] = max(car.profile[lens[1]][section] - loss, 0)
+                    car.profile[lens[1]][section] = max(car.profile[lens[1]][section] - (loss / len(self.foes)), 0)
 
             gain = self.profiler_gain + loss
 
@@ -479,19 +486,15 @@ class VirxERLU(StandaloneBot):
                         self.line(bottom_back_right, bottom_front_right, hitbox_color)
                         self.line(top_back_right, top_front_right, hitbox_color)
 
-                    # if self.odd_tick == 0 and self.true_name == self.name:
-                    #     profiles = []
-                    #     for car in self.foes:
-                    #         profile = [round(car.profile[str(len(self.foes) - 1)][i], 3) for i in range(4)]
-                    #         profiles.append(f"{car.name} profile: {profile}")
-
-                    #     for car in self.friends:
-                    #         profile = [round(car.profile[str(len(self.friends))][i], 3) for i in range(4)]
-                    #         profiles.append(f"{car.name} profile: {profile}")
-
-                    #     print(" ".join(profiles))
-
                     if self.debug_2d_bool:
+                        for car in self.foes:
+                            profile = [round(car.profile[str(len(self.foes) - 1)][i], 3) for i in range(4)]
+                            self.debug[1].insert(0, f"{car.name} profile: {profile}")
+
+                        for car in self.friends:
+                            profile = [round(car.profile[str(len(self.friends))][i], 3) for i in range(4)]
+                            self.debug[1].insert(0, f"{car.name} profile: {profile}")
+
                         if self.delta_time != 0:
                             self.debug[1].insert(0, f"TPS: {round(1 / self.delta_time)}")
                         
@@ -536,10 +539,11 @@ class car_object:
     # The carObject, and kin, convert the gametickpacket in something a little friendlier to use,
     # and are updated by VirxERLU as the game runs
     def __init__(self, index, packet=None, profile=True):
-        self.location = Vector()
+        self._vec = Vector  # ignore this property
+        self.location = self._vec()
         self.orientation = Matrix3()
-        self.velocity = Vector()
-        self.angular_velocity = Vector()
+        self.velocity = self._vec()
+        self.angular_velocity = self._vec()
         self.demolished = False
         self.airborne = False
         self.supersonic = False
@@ -563,7 +567,7 @@ class car_object:
                 return
 
             uuid = int("".join(reversed(list(str(sum(reversed(tuple(int(str(CHARS.index(char) if char in CHARS else len(CHARS)) + "0" * i) for i, char in enumerate(self.true_name)))))))))
-            self.profile_path = os.path.dirname(__file__) + f'/../profiles/{uuid}.cpf'
+            self.profile_path = os.path.dirname(__file__) + f'/../../Vfiles/{uuid}.cpf'
             if os.path.isfile(self.profile_path):
                 with open(self.profile_path, "r") as f:
                     while 1:
@@ -626,9 +630,9 @@ class car_object:
     def update(self, packet):
         car = packet.game_cars[self.index]
         car_phy = car.physics
-        self.location = Vector(car_phy.location.x, car_phy.location.y, car_phy.location.z)
-        self.velocity = Vector(car_phy.velocity.x, car_phy.velocity.y, car_phy.velocity.z)
-        self.orientation = Matrix3(car_phy.rotation.pitch, car_phy.rotation.yaw, car_phy.rotation.roll)
+        self.location = self._vec.from_vector(car_phy.location)
+        self.velocity = self._vec.from_vector(car_phy.velocity)
+        self.orientation = Matrix3.from_rotator(car_phy.rotation)
         self.angular_velocity = self.orientation.dot((car_phy.angular_velocity.x, car_phy.angular_velocity.y, car_phy.angular_velocity.z))
         self.demolished = car.is_demolished
         self.airborne = not car.has_wheel_contact
@@ -684,8 +688,9 @@ class last_touch:
 
 class ball_object:
     def __init__(self):
-        self.location = Vector()
-        self.velocity = Vector()
+        self._vec = Vector  # ignore this property
+        self.location = self._vec()
+        self.velocity = self._vec()
         self.last_touch = last_touch()
         
         # deprecated! use last_touch instead!
@@ -700,19 +705,15 @@ class ball_object:
 
     def update(self, packet):
         ball = packet.game_ball
-        self.location = Vector(ball.physics.location.x, ball.physics.location.y, ball.physics.location.z)
-        self.velocity = Vector(ball.physics.velocity.x, ball.physics.velocity.y, ball.physics.velocity.z)
+        self.location = self._vec.from_vector(ball.physics.location)
+        self.velocity = self._vec.from_vector(ball.physics.velocity)
         self.last_touch.update(packet)
-
-        # deprecated! use last_touch instead!
-        self.latest_touched_time = ball.latest_touch.time_seconds
-        self.latest_touched_team = ball.latest_touch.team
 
 
 class boost_object:
     def __init__(self, index, location, large):
         self.index = index
-        self.location = Vector(location.x, location.y, location.z)
+        self.location = Vector.from_vector(location)
         self.active = True
         self.large = large
 
@@ -773,18 +774,22 @@ class Matrix3:
         CR = math.cos(roll)
         SR = math.sin(roll)
         # List of 3 vectors, each descriping the direction of an axis: Forward, Left, and Up
-        self.data = [
+        self.data = (
             Vector(CP*CY, CP*SY, SP),
             Vector(CY*SP*SR-CR*SY, SY*SP*SR+CR*CY, -CP*SR),
             Vector(-CR*CY*SP-SR*SY, -CR*SY*SP+SR*CY, CP*CR)
-        ]
+        )
         self.forward, self.right, self.up = self.data
 
     def __getitem__(self, key):
         return self.data[key]
 
     def __str__(self):
-        return f"[{self.forward}\n{self.right}\n{self.up}]"
+        return f"[{self.forward}\n {self.right}\n {self.up}]"
+
+    @staticmethod
+    def from_rotator(rotator) -> Matrix3:
+        return Matrix3(rotator.pitch, rotator.yaw, rotator.roll)
 
     def dot(self, vector):
         return Vector(self.forward.dot(vector), self.right.dot(vector), self.up.dot(vector))
@@ -894,6 +899,10 @@ class Vector:
     def __round__(self, decimals=0) -> Vector:
         # Rounds all of the values
         return Vector(*np.around(self._np, decimals=decimals))
+
+    @staticmethod
+    def from_vector(vec) -> Vector:
+        return Vector(vec.x, vec.y, vec.z)
 
     def magnitude(self) -> float:
         # Returns the length of the vector

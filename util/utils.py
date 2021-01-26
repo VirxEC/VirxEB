@@ -2,6 +2,10 @@ from queue import Full
 
 from util.agent import Vector, math
 
+COAST_ACC = 525.0
+BREAK_ACC = 3500
+MIN_BOOST_TIME = 0.1
+
 
 def cap(x, low, high):
     # caps/clamps a number between a low and high value
@@ -57,11 +61,16 @@ def defaultThrottle(agent, target_speed, target_angles=None, local_target=None):
                 agent.controller.steer = agent.controller.yaw
 
         t = target_speed - car_speed
-        ta = throttle_acceleration(car_speed)
-        agent.controller.throttle = cap(t / ta, -1, 1) if ta != 0 and (target_speed < 1410 or t < -ta * agent.delta_time * 6) else sign(t if abs(t) > 117 else target_speed)
+        ta = throttle_acceleration(abs(car_speed)) * agent.delta_time
+        if car_speed <= 1410:
+            agent.controller.throttle = cap(t / ta, -1, 1)
+        elif sign(target_speed) * t > -COAST_ACC * agent.delta_time:
+            agent.controller.throttle = sign(target_speed)
+        elif sign(target_speed) * t <= -COAST_ACC * agent.delta_time:
+            agent.controller.throttle = sign(t)
 
         if not agent.controller.handbrake:
-            agent.controller.boost = angle_to_target < 0.5 and (t > ta * agent.delta_time * 6 + agent.boost_accel * agent.delta_time * 6 if target_speed < 1410 else t > agent.boost_accel * agent.delta_time * 6)
+            agent.controller.boost = abs(target_angles[1]) < 0.5 and t - ta >= agent.boost_accel * MIN_BOOST_TIME / 4
 
     return car_speed
 
@@ -80,10 +89,10 @@ def throttle_acceleration(car_velocity_x):
 
     # use y = mx + b to find the throttle acceleration
     if x < 1400:
-        return (-36 / 35) * x + 1600;
+        return (-36 / 35) * x + 1600
 
-    x -= 1400;
-    return -16 * x + 160;
+    x -= 1400
+    return -16 * x + 160
 
 
 def is_inside_turn_radius(turn_rad, local_target, steer_direction):
@@ -262,6 +271,32 @@ def dodge_impulse(agent):
     if dif > 0:
         impulse -= dif
     return impulse
+
+
+def get_cap(agent, cap_, get_aerial_cap=False):
+    foes = len(tuple(foe for foe in agent.foes if not foe.demolished and foe.location.y * side(agent.team) < agent.ball.location.y * side(agent.team) + 75))
+    if foes != 0 and agent.predictions['enemy_time_to_ball'] != 7:
+        future_ball_location_slice = min(round(agent.predictions['enemy_time_to_ball'] * 1.15 * 60), agent.ball_prediction_struct.num_slices - 1)
+        foe_intercept_location = agent.ball_prediction_struct.slices[future_ball_location_slice].physics.location
+        foe_intercept_location = Vector(foe_intercept_location.x, foe_intercept_location.y)
+
+        cap_slices = round(cap_) * 60
+        for i, ball_slice in enumerate(agent.ball_prediction_struct.slices[future_ball_location_slice:cap_slices]):
+            ball_loc = Vector(ball_slice.physics.location.x, ball_slice.physics.location.y)
+
+            if foe_intercept_location.dist(ball_loc) >= agent.ball_radius * 4 + (agent.me.hitbox.width * (1 + foes)):
+                cap_ = (i - 1) / 60
+                break
+
+    if not get_aerial_cap:
+        return cap_
+
+    aerial_cap = agent.predictions['enemy_time_to_ball'] if agent.predictions['enemy_time_to_ball'] < cap_ else cap_
+
+    if len(agent.friends) == 0 and not agent.predictions['own_goal']:
+        aerial_cap /= 2
+
+    return cap_, aerial_cap
 
 
 def valid_ceiling_shot(agent, cap_=5):
