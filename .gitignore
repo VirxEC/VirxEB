@@ -112,6 +112,7 @@ ENV/
 
 #vscode
 .vscode/
+.pylintrc
 
 # Other RL bots
 RLBotPackDeletable/

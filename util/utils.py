@@ -47,14 +47,13 @@ def defaultThrottle(agent, target_speed, target_angles=None, local_target=None):
     if not agent.me.airborne:
         if target_angles is not None and local_target is not None:
             turn_rad = turn_radius(abs(car_speed))
-            agent.controller.handbrake = not agent.me.airborne and agent.me.velocity.magnitude() > 250 and (is_inside_turn_radius(turn_rad, local_target, sign(agent.controller.steer)) if abs(local_target.y) < turn_rad else abs(local_target.x) < turn_rad)
+            agent.controller.handbrake = not agent.me.airborne and agent.me.velocity.magnitude() > 950 and (is_inside_turn_radius(turn_rad, local_target, sign(agent.controller.steer)) if abs(local_target.y) < turn_rad else abs(local_target.x) < turn_rad)
 
         angle_to_target = abs(target_angles[1])
         if target_speed < 0:
             angle_to_target = math.pi - angle_to_target
         if agent.controller.handbrake:
-            if angle_to_target > 2.8:
-                if abs(target_speed) > 950: target_speed = 950 * sign(target_speed)
+            if angle_to_target > 2.6:
                 agent.controller.steer = sign(agent.controller.steer)
                 agent.controller.handbrake = False
             else:
@@ -62,7 +61,7 @@ def defaultThrottle(agent, target_speed, target_angles=None, local_target=None):
 
         t = target_speed - car_speed
         ta = throttle_acceleration(abs(car_speed)) * agent.delta_time
-        if car_speed <= 1410:
+        if ta != 0:
             agent.controller.throttle = cap(t / ta, -1, 1)
         elif sign(target_speed) * t > -COAST_ACC * agent.delta_time:
             agent.controller.throttle = sign(target_speed)
@@ -70,7 +69,7 @@ def defaultThrottle(agent, target_speed, target_angles=None, local_target=None):
             agent.controller.throttle = sign(t)
 
         if not agent.controller.handbrake:
-            agent.controller.boost = abs(target_angles[1]) < 0.5 and t - ta >= agent.boost_accel * MIN_BOOST_TIME / 4
+            agent.controller.boost = t - ta >= agent.boost_accel * MIN_BOOST_TIME
 
     return car_speed
 
@@ -274,7 +273,7 @@ def dodge_impulse(agent):
 
 
 def get_cap(agent, cap_, get_aerial_cap=False):
-    foes = len(tuple(foe for foe in agent.foes if not foe.demolished and foe.location.y * side(agent.team) < agent.ball.location.y * side(agent.team) + 75))
+    foes = len(tuple(foe for foe in agent.foes if not foe.demolished and foe.location.y * side(agent.team) < agent.ball.location.y * side(agent.team) - 150))
     if foes != 0 and agent.predictions['enemy_time_to_ball'] != 7:
         future_ball_location_slice = min(round(agent.predictions['enemy_time_to_ball'] * 1.15 * 60), agent.ball_prediction_struct.num_slices - 1)
         foe_intercept_location = agent.ball_prediction_struct.slices[future_ball_location_slice].physics.location
@@ -284,7 +283,7 @@ def get_cap(agent, cap_, get_aerial_cap=False):
         for i, ball_slice in enumerate(agent.ball_prediction_struct.slices[future_ball_location_slice:cap_slices]):
             ball_loc = Vector(ball_slice.physics.location.x, ball_slice.physics.location.y)
 
-            if foe_intercept_location.dist(ball_loc) >= agent.ball_radius * 4 + (agent.me.hitbox.width * (1 + foes)):
+            if foe_intercept_location.dist(ball_loc) >= agent.ball_radius * 4 + (agent.me.hitbox.width * (2 + foes)):
                 cap_ = (i - 1) / 60
                 break
 

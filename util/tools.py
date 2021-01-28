@@ -76,7 +76,9 @@ def find_shot(agent, target, weight=None, cap_=6, can_aerial=True, can_double_ju
     gravity = tuple(agent.gravity)
 
     max_aerial_height = 1000 if len(agent.friends) == 0 and len(agent.foes) == 1 else math.inf
-    min_aerial_height = 551 if max_aerial_height > 1000 and agent.me.location.z >= 2044 - agent.me.hitbox.height * 1.1 else (150 if agent.boost_amount == 'unlimited' or agent.me.airborne else 300)
+    min_aerial_height = 551 if max_aerial_height > 1000 and agent.me.location.z >= 2044 - agent.me.hitbox.height * 1.1 else 300
+    self_team = side(agent.team)
+    self_loc = agent.me.location.y * self_team
 
     is_on_ground = not agent.me.airborne
     can_ground = is_on_ground and can_ground
@@ -110,7 +112,7 @@ def find_shot(agent, target, weight=None, cap_=6, can_aerial=True, can_double_ju
 
         # Check if we can make a shot at this slice
         # This operation is very expensive, so we use C to improve run time
-        shot = virxrlcu.parse_slice_for_shot_with_target(can_ground, can_jump, can_double_jump, can_aerial and (min_aerial_height < ball_location[2] < max_aerial_height and T < aerial_time_cap), T, *game_info, gravity, ball_info, me, targets)
+        shot = virxrlcu.parse_slice_for_shot_with_target(can_ground, can_jump, can_double_jump, can_aerial and (min_aerial_height < ball_location[2] < max_aerial_height) and T < aerial_time_cap and ball_location[1] * self_team < self_loc, T, *game_info, gravity, ball_info, me, targets)
 
         if shot['found'] == 1:
             shot_type = ShotType(shot["shot_type"])
@@ -140,7 +142,7 @@ def find_any_shot(agent, cap_=6, can_aerial=True, can_double_jump=True, can_jump
     gravity = tuple(agent.gravity)
 
     max_aerial_height = 1000 if len(agent.friends) == 0 and len(agent.foes) == 1 else math.inf
-    min_aerial_height = 551 if max_aerial_height > 1000 and agent.me.location.z >= 2044 - agent.me.hitbox.height * 1.1 else (150 if agent.boost_amount == 'unlimited' or agent.me.airborne else 300)
+    min_aerial_height = 551 if max_aerial_height > 1000 and agent.me.location.z >= 2044 - agent.me.hitbox.height * 1.1 else 300
 
     is_on_ground = not agent.me.airborne
     can_ground = is_on_ground and can_ground
@@ -174,7 +176,7 @@ def find_any_shot(agent, cap_=6, can_aerial=True, can_double_jump=True, can_jump
 
         # Check if we can make a shot at this slice
         # This operation is very expensive, so we use C to improve run time
-        shot = virxrlcu.parse_slice_for_shot(can_ground, can_jump, can_double_jump, can_aerial and (min_aerial_height < ball_location[2] < max_aerial_height and T < aerial_time_cap), T, *game_info, gravity, ball_info, me)
+        shot = virxrlcu.parse_slice_for_shot(can_ground, can_jump, can_double_jump, can_aerial and (min_aerial_height < ball_location[2] < max_aerial_height) and T < aerial_time_cap, T, *game_info, gravity, ball_info, me)
 
         if shot['found'] == 1:
             shot_type = ShotType(shot["shot_type"])
@@ -187,7 +189,7 @@ def find_any_shot(agent, cap_=6, can_aerial=True, can_double_jump=True, can_jump
 def get_slices(agent, cap_, weight=None, start_slice=6):
     # Get the struct
     struct = agent.ball_prediction_struct
-    min_time_to_ball = max(agent.predictions['self_min_time_to_ball'] - 0.5, 0)
+    min_time_to_ball = max(agent.predictions['self_min_time_to_ball'] / 3 * 2, 0)
 
     # Make sure it isn't empty
     if struct is None or min_time_to_ball > cap_:

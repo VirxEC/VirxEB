@@ -25,3 +25,6 @@ Back offset kickoff fix
 Corner kickoff fix
 General work on aerials
 Much better speed controller
+Fixed flips
+Fixed shot speed requirement math
+Removed many restrictions on aerials, added a few new ones

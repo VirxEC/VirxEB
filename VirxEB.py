@@ -127,6 +127,13 @@ class VirxEB(VirxERLU):
                         is_goal = True
                         break
 
+                self.own_goal = {"location": Vector(), "slice": -1}
+                for i, ball_slice in enumerate(self.ball_prediction_struct.slices[1:30:4]):
+                    if ball_slice.physics.location.y * side(self.team) >= 5212.75:
+                        self.own_goal["location"] = Vector.from_vector(self.ball_prediction_struct.slices[i].physics.location)
+                        self.own_goal["slice"] = i
+                        break
+
             if is_own_goal and not self.predictions['own_goal']:
                 self.send_quick_chat(QuickChats.CHAT_EVERYONE, QuickChats.Compliments_NiceShot)
 
@@ -252,7 +259,7 @@ class VirxEB(VirxERLU):
 
             # Check if we can make a shot at this slice
             # This operation is very expensive, so we use C to improve run time
-            shot = virxrlcu.parse_slice_for_shot(is_on_ground and profile[0], is_on_ground and profile[1], is_on_ground and profile[2], profile[3], time_remaining, *game_info, gravity, ball_info, g_me)
+            shot = virxrlcu.parse_slice_for_shot(is_on_ground and profile[0], is_on_ground and profile[1], is_on_ground and profile[2], profile[3] and ball_location[2] > 300, time_remaining, *game_info, gravity, ball_info, g_me)
 
             if shot['found'] == 1:
                 return time_remaining
@@ -372,7 +379,7 @@ class VirxEB(VirxERLU):
                 if not self.predictions['own_goal'] and self_loc.y <= ball_loc.y - 50 and not self.is_clear() and self.get_stack_name() == 'goto_boost' and abs(ball_loc.x) > 1024 and self.backcheck(clear_on_valid=True):
                     return
 
-                if self.is_clear() and not self.backcheck():
+                if self.is_clear() and not self.backcheck() and self.me.location.flat_dist(self.ball.location) > 3840:
                     face_target_routine = face_target(ball=True)
                     ball_f = face_target_routine.get_ball_target(self)
                     if ball_f.y * side(self.team) > -3840 and abs(Vector(x=1).angle2D(self.me.local_location(ball_f))) >= 1 and self.me.velocity.magnitude() < 100:
