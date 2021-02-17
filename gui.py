@@ -50,7 +50,7 @@ class Gui(Thread):
         # Double jump
 
         double_jump_bool = BooleanVar()
-        double_jump_bool.set(self.agent.aerials)
+        double_jump_bool.set(self.agent.double_jump)
 
         def set_double_jump():
             self.agent.double_jump = double_jump_bool.get()
@@ -61,7 +61,7 @@ class Gui(Thread):
         # Jump
 
         jump_bool = BooleanVar()
-        jump_bool.set(self.agent.aerials)
+        jump_bool.set(self.agent.jump)
 
         def set_jump():
             self.agent.jump = jump_bool.get()
