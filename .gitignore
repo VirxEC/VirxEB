@@ -114,7 +114,7 @@ ENV/
 .vscode/
 .pylintrc
 
-# Other RL bots
+# Other RLBot stuff
 RLBotPackDeletable/
 VirxEB.zip
 test.py
@@ -127,3 +127,7 @@ dragon.cfg
 elonmb.cfg
 virxe b.cfg
 drive_sim.py
+test_setup.py
+test2.py
+update_environment.bat
+errors/
