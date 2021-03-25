@@ -130,4 +130,6 @@ drive_sim.py
 test_setup.py
 test2.py
 update_environment.bat
+update_environment_2.bat
 errors/
+publish_rlcu.bat

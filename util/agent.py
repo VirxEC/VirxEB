@@ -7,7 +7,6 @@ import os
 import re
 import string
 from datetime import datetime
-from enum import Enum
 from time import time_ns
 from traceback import print_exc
 from typing import List, Tuple
@@ -15,28 +14,28 @@ from typing import List, Tuple
 import numpy as np
 from rlbot.agents.base_agent import SimpleControllerState
 from rlbot.agents.standalone.standalone_bot import StandaloneBot, run_bot
+from rlbot.messages.flat import MatchSettings
+from rlbot.utils.game_state_util import (BallState, CarState, GameState,
+                                         Physics, Vector3)
+from rlbot.utils.structures.game_data_struct import GameTickPacket
 
 # If you're putting your bot in the botpack, or submitting to a tournament, make this True!
-TOURNAMENT_MODE = False
+TOURNAMENT_MODE = True
 
 # Make False to enable hot reloading, at the cost of the GUI
-EXTRA_DEBUGGING = True
+EXTRA_DEBUGGING = False
 
 if not TOURNAMENT_MODE and EXTRA_DEBUGGING:
     from gui import Gui
     from match_comms import MatchComms
 
 
-class Playstyle(Enum):
-    Defensive = -1
-    Neutral = 0
-    Offensive = 1
-
-
 class VirxERLU(StandaloneBot):
     # Massive thanks to ddthj/GoslingAgent (GitHub repo) for the basis of VirxERLU
-    def initialize_agent(self):
-        self.startup_time = time_ns()
+    # VirxERLU on VirxEC Showcase -> https://virxerlu.virxcase.dev/
+    # Wiki -> https://github.com/VirxEC/VirxERLU/wiki
+    def __init__(self, name, team, index):
+        super().__init__(name, team, index)
         self.tournament = TOURNAMENT_MODE
         self.extra_debugging = EXTRA_DEBUGGING
         self.true_name = re.split(r' \(\d+\)$', self.name)[0]
@@ -46,50 +45,34 @@ class VirxERLU(StandaloneBot):
         self.debug_lines = True
         self.debug_3d_bool = True
         self.debug_stack_bool = True
-        self.debug_2d_bool = self.true_name == self.name
+        self.debug_2d_bool = self.name == self.true_name
         self.show_coords = False
         self.debug_ball_path = False
         self.debug_ball_path_precision = 10
-        self.debug_vector = Vector()
         self.disable_driving = False
-        self.goalie = False
-        self.jump = True
-        self.double_jump = True
-        self.ground_shot = True
-        self.aerials = True
+
+    def initialize_agent(self):
+        self.startup_time = time_ns()
 
         T = datetime.now()
         T = T.strftime("%Y-%m-%d %H;%M")
 
+        error_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "errors")
+
+        if not os.path.isdir(error_folder):
+            os.mkdir(error_folder)
+
         self.traceback_file = (
-            os.getcwd(),
+            os.path.join(error_folder),
             f"-traceback ({T}).txt"
         )
 
-        self.predictions = {
-            "closest_enemy": 0,
-            "own_goal": False,
-            "goal": False,
-            "team_from_goal": (),
-            "team_to_ball": (),
-            "self_from_goal": 0,
-            "self_to_ball": 0,
-            "was_down": False,
-            "enemy_time_to_ball": 7,
-            "self_min_time_to_ball": 7
-        }
+        self.print(f"True name: {self.true_name}")
 
         if not self.tournament and self.extra_debugging:
             self.gui = Gui(self)
             self.print("Starting the GUI...")
             self.gui.start()
-
-            if self.matchcomms_root is not None:
-                self.match_comms = MatchComms(self)
-                self.print("Starting the match communication handler...")
-                self.match_comms.start()
-
-        self.ball_prediction_struct = None
 
         self.print("Building game information")
 
@@ -129,18 +112,11 @@ class VirxERLU(StandaloneBot):
             "heatseeker"
         )
 
-        ball_size = (
-            92.75,
-            69.25,
-            139.5,
-            239.75
-        )
-
         self.gravity = gravity[mutators.GravityOption()]
         self.boost_accel = boost_accel[mutators.BoostStrengthOption()]
         self.boost_amount = boost_amount[mutators.BoostOption()]
         self.game_mode = game_mode[match_settings.GameMode()]
-        self.ball_radius = ball_size[mutators.BallSizeOption()]
+        self.ball_radius = 92.75
 
         if self.game_mode == "heatseeker":
             self.print("Preparing for heatseeker")
@@ -171,37 +147,22 @@ class VirxERLU(StandaloneBot):
         self.shooting = False
         self.odd_tick = -1
         self.delta_time = 1 / 120
-
-        self.profiler_threshold = 0.8
-        self.profiler_loss = 0.005
-        self.profiler_gain = 0.21
-        self.profiler_last_save = 0
-        self.last_ball_touch_time = -1
-        self.unpause_timer = -1
+        self.last_sent_tmcp_packet = None
 
         self.future_ball_location_slice = 180
-        self.min_intercept_slice = 180
-
-        self.playstyles = Playstyle
-        self.playstyle = self.playstyles.Neutral
-        self.can_shoot = None
-        self.shot_weight = -1
-        self.shot_time = -1
+        self.ball_prediction_struct = None
 
     def retire(self):
         # Stop the currently running threads
         if not self.tournament and self.extra_debugging:
             self.gui.stop()
 
-            if self.matchcomms_root is not None:
-                self.match_comms.stop()
-
     def is_hot_reload_enabled(self):
         # The tkinter GUI isn't compatible with hot reloading
         # Use the Continue and Spawn option in the RLBotGUI instead
         return not self.extra_debugging
 
-    def get_ready(self, packet):
+    def get_ready(self, packet: GameTickPacket):
         field_info = self.get_field_info()
         self.boosts = tuple(boost_object(i, field_info.boost_pads[i].location, field_info.boost_pads[i].is_full_boost) for i in range(field_info.num_boosts))
         if len(self.boosts) != 34:
@@ -217,41 +178,20 @@ class VirxERLU(StandaloneBot):
         load_time = (time_ns() - self.startup_time) / 1e+6
         print(f"{self.name}: Built game info in {load_time} milliseconds")
 
-        if self.name in {"VirxEB", "ABot"}:
-            print(f"{self.name}: Check me out at https://www.virxcase.dev!!!")
-
         self.ready = True
-    
-    def save_profiles(self):
-        if self.me.name != self.me.true_name:
-            return
 
-        for car in self.friends + self.foes:
-            if self.name == self.true_name:
-                with open(car.profile_path, "w") as f:
-                    json.dump(car.profile, f)
-            
-        self.profiler_last_save = self.time
-
-    def refresh_player_lists(self, packet):
+    def refresh_player_lists(self, packet: GameTickPacket):
+        match_settings = self.get_match_settings()
         # Useful to keep separate from get_ready because humans can join/leave a match
-        self.friends = tuple(car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team is self.team and i != self.index)
-        self.foes = tuple(car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team != self.team)
-        self.me = car_object(self.index, packet)
+        self.friends = tuple(car_object(i, packet, match_settings) for i in range(packet.num_cars) if packet.game_cars[i].team is self.team and i != self.index)
+        self.foes = tuple(car_object(i, packet, match_settings) for i in range(packet.num_cars) if packet.game_cars[i].team != self.team)
+        self.me = car_object(self.index, packet, match_settings)
 
-        len_friends = str(len(self.friends))
-        self.me.profile[len_friends] = [1, 1, 1, 1]
-
-        for car in self.friends:
-            if car.profile.get(len_friends) is None:
-                car.profile[len_friends] = [1, 1, 1, 1]
-
-        len_foes = str(len(self.foes) - 1)
-        for car in self.foes:
-            if car.profile.get(len_foes) is None:
-                car.profile[len_foes] = [1, 1, 1, 1]
-
-        self.save_profiles()
+        try:
+            true_name = match_settings.PlayerConfigurations(self.index).Name()
+            self.true_name = true_name
+        except Exception:
+            print(f"{self.name}: I appear to have been forcefully pushed into a match! How rude.")
 
     def push(self, routine):
         self.stack.append(routine)
@@ -309,7 +249,7 @@ class VirxERLU(StandaloneBot):
     def is_clear(self):
         return len(self.stack) < 1
 
-    def preprocess(self, packet):
+    def preprocess(self, packet: GameTickPacket):
         if packet.num_cars != len(self.friends)+len(self.foes)+1:
             self.refresh_player_lists(packet)
 
@@ -324,6 +264,9 @@ class VirxERLU(StandaloneBot):
         self.delta_time = self.game.time - self.time
         self.time = self.game.time
         self.gravity = self.game.gravity
+
+        self.ball_radius = self.ball.shape.hitbox.diameter if self.ball.shape.type in {1, 2} else (sum(self.ball.shape.hitbox.length, self.ball.shape.hitbox.width, self.ball.shape.hitbox.height) / 3)
+        self.ball_radius /= 2
 
         # When a new kickoff begins we empty the stack
         if not self.kickoff_flag and self.game.round_active and self.game.kickoff:
@@ -343,70 +286,27 @@ class VirxERLU(StandaloneBot):
 
         self.ball_prediction_struct = self.get_ball_prediction_struct()
 
-        if self.delta_time > 0 and self.game.round_active and self.time - self.unpause_timer > 4 and len(self.foes) > 0:
-            loss = self.profiler_loss * self.delta_time
-            lens = (str(len(self.friends)), str(len(self.foes) - 1))
-
-            dbz = self.ball.location.z
-            divisors = [
-                dbz <= 126.75,
-                126.75 < dbz <= 312.75,
-                312.75 < dbz <= 542.75,
-                542.75 < dbz
-            ]
-            section = divisors.index(True)
-
-            for car in self.friends:
-                if not car.demolished:
-                    car.profile[lens[0]][section] = max(car.profile[lens[0]][section] - (loss / (len(self.friends) + 1)), 0)
-
-            for car in self.foes:
-                if not car.demolished:
-                    car.profile[lens[1]][section] = max(car.profile[lens[1]][section] - (loss / len(self.foes)), 0)
-
-            gain = self.profiler_gain + loss
-
-            if self.ball.last_touch.time != self.last_ball_touch_time:
-                if self.ball.last_touch.car.index != self.index:
-                    if self.ball.last_touch.car.team == self.team:
-                        index = None
-                        for i, car in enumerate(self.friends):
-                            if car.index == self.ball.last_touch.car.index:
-                                index = i
-                                
-                        self.friends[index].profile[lens[0]][0 if not car.airborne else section] = min(self.friends[index].profile[lens[0]][section] + gain, 1)
-                    else:
-                        index = None
-                        for i, car in enumerate(self.foes):
-                            if car.index == self.ball.last_touch.car.index:
-                                index = i
-                                
-                        self.foes[index].profile[lens[1]][0 if not car.airborne else section] = min(self.foes[index].profile[lens[1]][section] + gain, 1)
-                self.last_ball_touch_time = self.ball.last_touch.time
-
-            if self.time - self.profiler_last_save > 10:
-                self.save_profiles()
-
-    def get_weight(self, shot=None, index=None):
-        if index is not None:
-            return self.max_shot_weight - math.ceil(index / 2)
-
-        if shot is not None:
-            if shot is self.best_shot:
-                return self.max_shot_weight + 1
-
-            if shot is self.anti_shot:
-                return self.max_shot_weight - 1
-
-            for shot_list in (self.offensive_shots, self.defensive_shots):
+        if self.matchcomms_root is not None:
+            while 1:
                 try:
-                    return self.max_shot_weight - math.ceil(shot_list.index(shot) / 2)
-                except ValueError:
-                    continue
+                    msg = self.matchcomms.incoming_broadcast.get_nowait()
+                except Exception:
+                    break
+                
+                try:
+                    if msg.get('tmcp_version') is not None:
+                        if msg.get("team") == self.team and msg.get("index") != self.index:
+                            self.handle_tmcp_packet(msg)
+                    else:
+                        self.handle_match_comm(msg)
+                except Exception:
+                    print_exc()
 
-        return self.max_shot_weight - 2
+    def is_shooting(self):
+        stack_routine_name = '' if self.is_clear() else self.stack[0].__class__.__name__
+        return stack_routine_name in {'Aerial', 'jump_shot', 'double_jump', 'ground_shot', 'short_shot'}
 
-    def get_output(self, packet):
+    def get_output(self, packet: GameTickPacket) -> SimpleControllerState:
         try:
             # Reset controller
             self.controller.__init__(use_item=True)
@@ -421,17 +321,7 @@ class VirxERLU(StandaloneBot):
                 if not self.is_clear():
                     self.clear()
             elif self.game.round_active:
-                self.dbg_3d(self.playstyle.name)
-                stack_routine_name = '' if self.is_clear() else self.stack[0].__class__.__name__
-                if stack_routine_name in {'Aerial', 'jump_shot', 'double_jump', 'ground_shot', 'short_shot'}:
-                    self.shooting = True
-                    if stack_routine_name is not 'short_shot':
-                        self.shot_weight = self.get_weight(self.stack[0].targets)
-                        self.shot_time = self.stack[0].intercept_time
-                else:
-                    self.shooting = False
-                    self.shot_weight = -1
-                    self.shot_time = -1
+                self.shooting = self.is_shooting()
 
                 try:
                     self.run()  # Run strategy code; This is a very expensive function to run
@@ -440,10 +330,23 @@ class VirxERLU(StandaloneBot):
                     print(f"ERROR in {self.name}; see '{t_file}'")
                     print_exc(file=open(t_file, "a"))
 
+                try:
+                    tmcp_packet = self.create_tmcp_packet()
+
+                    # if we haven't sent a packet, OR
+                    # the last packet we sent isn't out current packet AND either the action types are different OR either the time difference is greater than 0.1 or target is different
+                    if self.last_sent_tmcp_packet is None or self.tmcp_packet_is_different(tmcp_packet):
+                        self.matchcomms.outgoing_broadcast.put_nowait(tmcp_packet)
+                        self.last_sent_tmcp_packet = tmcp_packet
+                except Exception:
+                    t_file = os.path.join(self.traceback_file[0], self.name+"-TMCP"+self.traceback_file[1])
+                    print(f"ERROR in {self.name} with sending TMCP packet; see '{t_file}'")
+                    print_exc(file=open(t_file, "a"))
+
                 # run the routine on the end of the stack
                 if not self.is_clear():
+                    r_name = self.stack[-1].__class__.__name__
                     try:
-                        r_name = self.stack[-1].__class__.__name__
                         self.stack[-1].run(self)
                     except Exception:
                         t_file = os.path.join(self.traceback_file[0], r_name+self.traceback_file[1])
@@ -516,10 +419,88 @@ class VirxERLU(StandaloneBot):
             print_exc(file=open(t_file, "a"))
             return SimpleControllerState()
 
-    def handle_match_comm(self, msg):
-        pass
+    def get_minimum_game_time_to_ball(self):
+        # It is recommended that you override this
+        return -1
 
-    def test(self):
+    def tmcp_packet_is_different(self, tmcp_packet):
+        # If you're looking to overwrite this, you might want to do a version check
+        
+        # If the packets are the same
+        if self.last_sent_tmcp_packet == tmcp_packet:
+            return False
+        
+        action_type = tmcp_packet["action"]["type"]
+
+        # if the action types aren't the same
+        if self.last_sent_tmcp_packet["action"]["type"] != action_type:
+            return True
+
+        if action_type == "BALL":
+            dir1 = Vector(*self.last_sent_tmcp_packet["action"]["direction"])
+            dir2 = Vector(*tmcp_packet["action"]["direction"])
+            return abs(self.last_sent_tmcp_packet["action"]["time"] - tmcp_packet["action"]["time"]) >= 0.1 or dir1.magnitude() != dir2.magnitude() or dir1.angle(dir2) > 0.5
+
+        if action_type == "READY":
+            return abs(self.last_sent_tmcp_packet["action"]["time"] - tmcp_packet["action"]["time"]) >= 0.1
+
+        if action_type == "BOOST":
+            return self.last_sent_tmcp_packet["action"]["target"] != tmcp_packet["action"]["target"]
+
+        if action_type == "DEMO":
+            return abs(self.last_sent_tmcp_packet["action"]["time"] - tmcp_packet["action"]["time"]) >= 0.1 or self.last_sent_tmcp_packet["action"]["target"] != tmcp_packet["action"]["target"]
+
+        # Right now, this is only for DEFEND
+        return False
+
+    def create_tmcp_packet(self):
+        # https://github.com/RLBot/RLBot/wiki/Team-Match-Communication-Protocol
+        # don't worry about duplicate packets - this is handled automatically
+        tmcp_version = [0, 9]
+        return {
+            "tmcp_version": tmcp_version,
+            "index": self.index,
+            "team": self.team,
+            "action": self.get_tmcp_action(tmcp_version)
+        }
+
+    def get_tmcp_action(self, tmcp_version):
+        # If you're looking to overwrite this, you might want to do a version check
+
+        if self.is_clear():
+            return {
+                "type": "READY",
+                "time": -1
+            }
+        
+        stack_routine_name = self.stack[0].__class__.__name__
+
+        if stack_routine_name in {'Aerial', 'jump_shot', 'ground_shot', 'double_jump', 'short_shot'}:
+            return {
+                "type": "BALL",
+                "time": -1 if stack_routine_name == 'short_shot' else self.stack[0].intercept_time,
+                "direction": [0, 0, 0] if stack_routine_name == 'short_shot' or self.stack[0].shot_vector is None else list(self.stack[0].shot_vector)
+            }
+        if stack_routine_name == "goto_boost":
+            return {
+                "type": "BOOST",
+                "target": self.stack[0].boost.index
+            }
+
+        # by default, VirxERLU can't demo bots
+        return {
+            "type": "READY",
+            "time": self.get_minimum_game_time_to_ball()
+        }
+
+    def handle_tmcp_packet(self, packet):
+        # https://github.com/RLBot/RLBot/wiki/Team-Match-Communication-Protocol
+
+        for friend in self.friends:
+            if friend.index == packet['index']:
+                friend.tmcp_action = packet['action']
+
+    def handle_match_comm(self, msg):
         pass
 
     def run(self):
@@ -536,13 +517,14 @@ CHARS = list(string.ascii_letters) + list(string.digits) + list(string.punctuati
 
 
 class car_object:
-    # The carObject, and kin, convert the gametickpacket in something a little friendlier to use,
-    # and are updated by VirxERLU as the game runs
-    def __init__(self, index, packet=None, profile=True):
+    # objects convert the gametickpacket in something a little friendlier to use
+    # and are automatically updated by VirxERLU as the game runs
+    def __init__(self, index, packet: GameTickPacket=None, match_settings: MatchSettings=None, profile=True):
         self._vec = Vector  # ignore this property
         self.location = self._vec()
         self.orientation = Matrix3()
         self.velocity = self._vec()
+        self._local_velocity = self._vec()
         self.angular_velocity = self._vec()
         self.demolished = False
         self.airborne = False
@@ -551,12 +533,23 @@ class car_object:
         self.doublejumped = False
         self.boost = 0
         self.index = index
+        self.tmcp_action = None
+        self.true_name = None
+        self.land_time = 0
+
+        self.minimum_time_to_ball = 7
+
+        if match_settings is not None:
+            try:
+                self.true_name = match_settings.PlayerConfigurations(index).Name()
+            except Exception:
+                pass
 
         if packet is not None:
             car = packet.game_cars[self.index]
 
             self.name = car.name
-            self.true_name = re.split(r' \(\d+\)$', self.name)[0]  # e.x. 'ABot (12)' will instead be just 'ABot'
+            if self.true_name is None: self.true_name = re.split(r' \(\d+\)$', self.name)[0]  # e.x. 'ABot (12)' will instead be just 'ABot'
             self.team = car.team
             self.hitbox = hitbox_object(car.hitbox.length, car.hitbox.width, car.hitbox.height, Vector(car.hitbox_offset.x, car.hitbox_offset.y, car.hitbox_offset.z))
 
@@ -599,7 +592,7 @@ class car_object:
         # y is the velocity to the left (+) or right (-)
         # z if the velocity upwards (+) or downwards (-)
         if velocity is None:
-            velocity = self.velocity
+            return self._local_velocity
 
         return self.local(velocity)
 
@@ -621,17 +614,18 @@ class car_object:
             1 if self.supersonic else 0,
             1 if self.jumped else 0,
             1 if self.doublejumped else 0,
-            self.boost if agent.boost_amount != 'unlimited' else 255,
+            self.boost if agent.boost_amount != 'unlimited' and not agent.cheating else 255,
             self.index,
             tuple(self.hitbox),
             tuple(self.hitbox.offset)
         )
 
-    def update(self, packet):
+    def update(self, packet: GameTickPacket):
         car = packet.game_cars[self.index]
         car_phy = car.physics
         self.location = self._vec.from_vector(car_phy.location)
         self.velocity = self._vec.from_vector(car_phy.velocity)
+        self._local_velocity = self.local(self.velocity)
         self.orientation = Matrix3.from_rotator(car_phy.rotation)
         self.angular_velocity = self.orientation.dot((car_phy.angular_velocity.x, car_phy.angular_velocity.y, car_phy.angular_velocity.z))
         self.demolished = car.is_demolished
@@ -640,6 +634,9 @@ class car_object:
         self.jumped = car.jumped
         self.doublejumped = car.double_jumped
         self.boost = car.boost
+
+        if self.airborne and car.has_wheel_contact:
+            self.land_time = packet.game_info.seconds_elapsed
 
     @property
     def forward(self):
@@ -671,6 +668,17 @@ class hitbox_object:
         return (self.length, self.width, self.height)[index]
 
 
+class hitbox_sphere:
+    def __init__(self, diameter=92.75):
+        self.diameter = diameter
+
+
+class hitbox_cylinder:
+    def __init__(self, diameter=92.75, height=92.75):
+        self.diameter = diameter
+        self.height = height
+
+
 class last_touch:
     def __init__(self):
         self.location = Vector()
@@ -678,12 +686,29 @@ class last_touch:
         self.time = -1
         self.car = None
     
-    def update(self, packet):
+    def update(self, packet: GameTickPacket):
         touch = packet.game_ball.latest_touch
         self.location = touch.hit_location
         self.normal = touch.hit_normal
         self.time = touch.time_seconds
         self.car = car_object(touch.player_index, packet, profile=False)
+
+
+class ball_shape:
+    def __init__(self):
+        self.type = -1
+        self.hitbox = None
+
+    def update(self, packet: GameTickPacket):
+        shape = packet.game_ball.collision_shape
+        self.type = shape.type
+
+        if self.type == 0:
+            self.hitbox = hitbox_object(shape.box.length, shape.box.width, shape.box.height)
+        elif self.type == 1: 
+            self.hitbox = hitbox_sphere(shape.sphere.diameter)
+        elif self.type == 2:
+            self.hitbox = hitbox_cylinder(shape.cylinder.diameter, shape.cylinder.height)
 
 
 class ball_object:
@@ -692,10 +717,7 @@ class ball_object:
         self.location = self._vec()
         self.velocity = self._vec()
         self.last_touch = last_touch()
-        
-        # deprecated! use last_touch instead!
-        self.latest_touched_time = 0
-        self.latest_touched_team = 0
+        self.shape = ball_shape()
 
     def get_raw(self):
         return (
@@ -703,11 +725,12 @@ class ball_object:
             tuple(self.velocity)
         )
 
-    def update(self, packet):
+    def update(self, packet: GameTickPacket):
         ball = packet.game_ball
         self.location = self._vec.from_vector(ball.physics.location)
         self.velocity = self._vec.from_vector(ball.physics.velocity)
         self.last_touch.update(packet)
+        self.shape.update(packet)
 
 
 class boost_object:
@@ -717,7 +740,7 @@ class boost_object:
         self.active = True
         self.large = large
 
-    def update(self, packet):
+    def update(self, packet: GameTickPacket):
         self.active = packet.game_boosts[self.index].is_active
 
 
@@ -744,7 +767,7 @@ class game_object:
         self.foe_score = 0
         self.gravity = Vector()
 
-    def update(self, team, packet):
+    def update(self, team, packet: GameTickPacket):
         game = packet.game_info
         self.time = game.seconds_elapsed
         self.time_remaining = game.game_time_remaining
@@ -949,7 +972,7 @@ class Vector:
         # Returns the angle between this Vector and another Vector in radians
         return math.acos(max(min(np.dot(self.normalize()._np, value.normalize()._np).item(), 1), -1))
 
-    def rotate(self, angle: float) -> Vector:
+    def rotate2D(self, angle: float) -> Vector:
         # Rotates this Vector by the given angle in radians
         # Note that this is only 2D, in the x and y axis
         return Vector((math.cos(angle)*self.x) - (math.sin(angle)*self.y), (math.sin(angle)*self.x) + (math.cos(angle)*self.y), self.z)
@@ -970,13 +993,13 @@ class Vector:
     def clamp(self, start: Vector, end: Vector) -> Vector:
         # This extends clamp2D so it also clamps the vector's z
         s = self.clamp2D(start, end)
-        start_z = min(start.z, end.z)
-        end_z = max(start.z, end.z)
 
-        if s.z < start_z:
-            s.z = start_z
-        elif s.z > end_z:
-            s.z = end_z
+        if s.z < start.z:
+            s = s.flatten().scale(1 - start.z)
+            s.z = start.z
+        elif s.z > end.z:
+            s = s.flatten().scale(1 - end.z)
+            s.z = end.z
 
         return s
 
