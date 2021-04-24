@@ -50,7 +50,7 @@ def find_any_aerial(agent, cap_=6):
     return find_any_shot(agent, cap_, can_double_jump=False, can_jump=False, can_ground=False)
 
 
-def find_shot(agent: VirxERLU, target, weight=None, cap_=6, can_aerial=True, can_double_jump=True, can_jump=True, can_ground=True):
+def find_shot(agent: VirxERLU, target, weight=0, cap_=6, can_aerial=True, can_double_jump=True, can_jump=True, can_ground=True):
     if not can_aerial and not can_double_jump and not can_jump and not can_ground:
         agent.print("WARNING: All shots were disabled when find_shot was ran")
         return
@@ -75,7 +75,7 @@ def find_shot(agent: VirxERLU, target, weight=None, cap_=6, can_aerial=True, can
 
     gravity = tuple(agent.gravity)
 
-    max_aerial_height = 1000 if len(agent.friends) == 0 and len(agent.foes) == 1 else math.inf
+    max_aerial_height = 1000 if agent.num_friends == 0 and agent.num_foes == 1 else math.inf
     min_aerial_height = 551 if max_aerial_height > 1000 and agent.me.location.z >= 2044 - agent.me.hitbox.height * 1.1 and not agent.me.doublejumped else 300
 
     is_on_ground = not agent.me.airborne
@@ -123,9 +123,9 @@ def find_shot(agent: VirxERLU, target, weight=None, cap_=6, can_aerial=True, can
         if shot['found'] == 1:
             shot_type = ShotType(shot["shot_type"])
             if shot_type == ShotType.AERIAL:
-                return Aerial(intercept_time, (Vector(*shot['targets'][0]), Vector(*shot['targets'][1])), shot['fast'])
+                return Aerial(intercept_time, (Vector(*shot['targets'][0]), Vector(*shot['targets'][1])), weight, shot['fast'])
 
-            return SHOT_SWITCH[shot_type](intercept_time, (Vector(*shot['targets'][0]), Vector(*shot['targets'][1])))
+            return SHOT_SWITCH[shot_type](intercept_time, (Vector(*shot['targets'][0]), Vector(*shot['targets'][1])), weight)
 
 
 def find_any_shot(agent: VirxERLU, cap_=6, can_aerial=True, can_double_jump=True, can_jump=True, can_ground=True):
@@ -147,7 +147,7 @@ def find_any_shot(agent: VirxERLU, cap_=6, can_aerial=True, can_double_jump=True
 
     gravity = tuple(agent.gravity)
 
-    max_aerial_height = 1000 if len(agent.friends) == 0 and len(agent.foes) == 1 else math.inf
+    max_aerial_height = 1000 if agent.num_friends == 0 and agent.num_foes == 1 else math.inf
     min_aerial_height = 551 if max_aerial_height > 1000 and agent.me.location.z >= 2044 - agent.me.hitbox.height * 1.1 and not agent.me.doublejumped else 300
 
     is_on_ground = not agent.me.airborne
@@ -161,7 +161,7 @@ def find_any_shot(agent: VirxERLU, cap_=6, can_aerial=True, can_double_jump=True
         return
 
     # Here we get the slices that need to be searched - by defining a cap, we can reduce the number of slices and improve search times
-    slices = get_slices(agent, cap_)
+    slices = get_slices(agent, cap_, weight=0)
 
     if slices is None:
         return
@@ -195,12 +195,12 @@ def find_any_shot(agent: VirxERLU, cap_=6, can_aerial=True, can_double_jump=True
         if shot['found'] == 1:
             shot_type = ShotType(shot["shot_type"])
             if shot_type == ShotType.AERIAL:
-                return Aerial(intercept_time, fast_aerial=shot['fast'])
+                return Aerial(intercept_time, weight=0, fast_aerial=shot['fast'])
 
-            return SHOT_SWITCH[shot_type](intercept_time)
+            return SHOT_SWITCH[shot_type](intercept_time, weight=0)
 
 
-def get_slices(agent, cap_, weight=None, start_slice=6):
+def get_slices(agent, cap_, weight=0, start_slice=6):
     # Get the struct
     struct = agent.ball_prediction_struct
     min_time_to_ball = max(agent.me.minimum_time_to_ball / 3 * 2, 0)
@@ -215,17 +215,19 @@ def get_slices(agent, cap_, weight=None, start_slice=6):
     end_slices = None
 
     # If we're shooting, crop the struct
-    if agent.shooting and agent.shot_weight != -1:
-        # Get the time remaining
-        time_remaining = agent.stack[0].intercept_time - agent.time
-        if 0 < time_remaining < 0.5:
-            return
+    if agent.shooting:
+    	shot_weight = agent.stack[0].weight
+    	if shot_weight != -1:
+	        # Get the time remaining
+	        time_remaining = agent.stack[0].intercept_time - agent.time
+	        if 0 < time_remaining < 0.5:
+	            return
 
-        # if the shot is done but it's working on it's 'follow through', then ignore this stuff
-        if time_remaining > 0:
-            # Convert the time remaining into number of slices, and take off the minimum gain accepted from the time
-            min_gain = 0.2 if weight is None or weight is agent.shot_weight else -(agent.max_shot_weight - agent.shot_weight + 1)
-            end_slice = round(min(time_remaining - min_gain, cap_) * 60)
+	        # if the shot is done but it's working on it's 'follow through', then ignore this stuff
+	        if time_remaining > 0:
+	            # Convert the time remaining into number of slices, and take off the minimum gain accepted from the time
+	            min_gain = 0.2 if weight is None or weight is shot_weight else (-1 * (agent.max_shot_weight - shot_weight + 1))
+	            end_slice = round(min(time_remaining - min_gain, cap_) * 60)
 
     if end_slices is None:
         # Cap the slices

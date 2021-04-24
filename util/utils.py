@@ -100,14 +100,18 @@ def defaultThrottle(agent: VirxERLU, target_speed, target_angles=None, local_tar
     # if the desired acceleration is big enough, use boost
     elif throttle_boost_transition < acceleration:
         agent.controller.throttle = 1
-        if t > 0 and not agent.controller.handbrake and angle_to_target < 1:
-            agent.controller.boost = True  # don't boost when we need to lose speed, we we're using handbrake, or when we aren't facing the target
-            if agent.cheating and agent.odd_tick == 0:
-                new_velocity = agent.me.velocity.flatten().scale(target_speed)
-                cars = {
-                    agent.index: CarState(Physics(velocity=Vector3(new_velocity.x, new_velocity.y)))
-                }
-                agent.set_game_state(GameState(cars=cars))
+        if not agent.controller.handbrake:
+            if t > 0 and angle_to_target < 1:
+                agent.controller.boost = True  # don't boost when we need to lose speed, we we're using handbrake, or when we aren't facing the target
+
+            if agent.cheating and agent.odd_tick == 0 and angle_to_target < 0.5:
+                velocity = agent.me.velocity.flatten()
+                if velocity.magnitude() > 100:
+                    if sign(target_speed) != sign(car_speed):
+                        velocity *= -1
+                    new_velocity = velocity.scale(abs(target_speed))
+                    cars = { agent.index: CarState(Physics(velocity=Vector3(new_velocity.x, new_velocity.y))) }
+                    agent.set_game_state(GameState(cars=cars))
 
     if car_speed < 0:
         agent.controller.throttle *= -1  # earlier we flipped the sign of the acceleration, so we have to flip the sign of the throttle for it to be correct
@@ -120,6 +124,34 @@ def defaultDrive(agent: VirxERLU, target_speed, local_target):
     velocity = defaultThrottle(agent, target_speed, target_angles, local_target)
 
     return target_angles, velocity
+
+
+def get_max_speed_from_local_point(point):
+    turn_rad = max(abs(point.x), abs(point.y))
+    return curvature_to_velocity(1 / turn_rad)
+
+
+def curvature_to_velocity(curve):
+    curve = cap(curve, 0.00088, 0.0069)
+    if 0.00088 <= curve <= 0.00110:
+        u = (curve - 0.00088) / (0.00110 - 0.00088)
+        return lerp(2300, 1750, u)
+
+    if 0.00110 <= curve <= 0.00138:
+        u = (curve - 0.00110) / (0.00138 - 0.00110)
+        return lerp(1750, 1500, u)
+
+    if 0.00138 <= curve <= 0.00235:
+        u = (curve - 0.00138) / (0.00235 - 0.00138)
+        return lerp(1500, 1000, u)
+
+    if 0.00235 <= curve <= 0.00398:
+        u = (curve - 0.00235) / (0.00398 - 0.00235)
+        return lerp(1000, 500, u)
+
+    if 0.00398 <= curve <= 0.0069:
+        u = (curve - 0.00398) / (0.0069 - 0.00398)
+        return lerp(500, 0, u)
 
 
 def throttle_acceleration(car_velocity_x):
@@ -152,7 +184,7 @@ def curvature(v):
     # v is the magnitude of the velocity in the car's forward direction
     if 0 <= v < 500:
         return 0.0069 - 5.84e-6 * v
-        
+
     if 500 <= v < 1000:
         return 0.00561 - 3.26e-6 * v
 
@@ -172,20 +204,6 @@ def in_field(point, radius):
     # determines if a point is inside the standard soccer field
     point = Vector(abs(point.x), abs(point.y), abs(point.z))
     return not (point.x > 4080 - radius or point.y > 5900 - radius or (point.x > 880 - radius and point.y > 5105 - radius) or (point.x > 2650 and point.y > -point.x + 8025 - radius))
-
-
-def find_slope(shot_vector, car_to_target):
-    # Finds the slope of your car's position relative to the shot vector (shot vector is y axis)
-    # 10 = you are on the axis and the ball is between you and the direction to shoot in
-    # -10 = you are on the wrong side
-    # 1 = you're about 45 degrees offcenter
-    d = shot_vector.dot(car_to_target)
-    e = abs(shot_vector.cross(Vector(z=1)).dot(car_to_target))
-    try:
-        f = d / e
-    except ZeroDivisionError:
-        return 10*sign(d)
-    return cap(f, -3, 3)
 
 
 def quadratic(a, b, c):
@@ -258,22 +276,6 @@ def send_comm(agent: VirxERLU, msg):
         agent.print("Outgoing broadcast is full; couldn't send message")
 
 
-def get_weight(agent: VirxERLU, shot=None, index=None):
-    if index is not None:
-        return agent.max_shot_weight - math.ceil(index / 2)
-
-    if shot is not None:
-        if shot is agent.best_shot:
-            return agent.max_shot_weight + 1
-
-        if shot is agent.anti_shot:
-            return agent.max_shot_weight - 1
-
-        return agent.max_shot_weight - math.ceil(agent.defensive_shots.index(shot) / 2)
-
-    return agent.max_shot_weight - 2
-
-
 def peek_generator(generator):
     try:
         return next(generator)
@@ -330,7 +332,7 @@ def ray_intersects_with_line(origin, direction, point1, point2):
         return t1
 
 
-def ray_intersects_with_sphere(origin, direction, center, radius):
+def ray_intersects_with_circle(origin, direction, center, radius):
     L = center - origin
     tca = L.dot(direction)
 
@@ -341,7 +343,7 @@ def ray_intersects_with_sphere(origin, direction, center, radius):
 
     if d2 > radius:
         return False
-    
+
     thc = math.sqrt(radius * radius - d2)
     t0 = tca - thc
     t1 = tca + thc
@@ -349,8 +351,78 @@ def ray_intersects_with_sphere(origin, direction, center, radius):
     return t0 > 0 or t1 > 0
 
 
+def min_non_neg(x, y):
+    return x if (x < y and x >= 0) or (y < 0 and x >= 0) else y
+
+
+# solve for x
+# y = a(x - h)^2 + k
+# y - k = a(x - h)^2
+# (y - k) / a = (x - h)^2
+# sqrt((y - k) / a) = x - h
+# sqrt((y - k) / a) + h = x
+def vertex_quadratic_solve_for_x_min_non_neg(a, h, k, y):
+    try:
+        v_sqrt = math.sqrt((y - k) / a)
+    except ValueError:
+        return 0
+    return min_non_neg(v_sqrt + h, -v_sqrt + h)
+
+
+def get_landing_time(fall_distance, falling_time_until_terminal_velocity, falling_distance_until_terminal_velocity, terminal_velocity, k, h, g):
+    return vertex_quadratic_solve_for_x_min_non_neg(g, h, k, fall_distance) if (fall_distance * sign(-g) <= falling_distance_until_terminal_velocity * sign(-g)) else falling_time_until_terminal_velocity + ((fall_distance - falling_distance_until_terminal_velocity) / terminal_velocity)
+
+
+def find_landing_plane(l: Vector, v: Vector, g: float):
+    if abs(l.y) >= 5120 or (v.x == 0 and v.y == 0 and g == 0):
+        return 5
+
+    times = [ -1, -1, -1, -1, -1, -1 ] #  side_wall_pos, side_wall_neg, back_wall_pos, back_wall_neg, ceiling, floor
+
+    if v.x != 0:
+        times[0] = (4080 - l.x) / v.x
+        times[1] = (-4080 - l.x) / v.x
+
+    if v.y != 0:
+        times[2] = (5110 - l.y) / v.y
+        times[3] = (-5110 - l.y) / v.y
+
+    if g != 0:
+        # this is the vertex of the equation, which also happens to be the apex of the trajectory
+        h = v.z / -g # time to apex
+        k = v.z * v.z / -g # vertical height at apex
+
+        # a is the current gravity... because reasons
+        # a = g
+
+        climb_dist = -l.z
+
+        # if the gravity is inverted, the the ceiling becomes the floor and the floor becomes the ceiling...
+        if g < 0:
+            climb_dist += 2030
+            if k >= climb_dist:
+                times[4] = vertex_quadratic_solve_for_x_min_non_neg(g, h, k, climb_dist)
+        elif g > 0:
+            climb_dist += 20
+            if k <= climb_dist:
+                times[5] = vertex_quadratic_solve_for_x_min_non_neg(g, h, k, climb_dist)
+
+        # this is necessary because after we reach our terminal velocity, the equation becomes linear (distance_remaining / terminal_velocity)
+        terminal_velocity = (2300 - v.flatten().magnitude()) * sign(g)
+        falling_time_until_terminal_velocity = (terminal_velocity - v.z) / g
+        falling_distance_until_terminal_velocity = v.z * falling_time_until_terminal_velocity + -g * (falling_time_until_terminal_velocity * falling_time_until_terminal_velocity) / 2.
+
+        fall_distance = -l.z
+        if g < 0:
+            times[5] = get_landing_time(fall_distance + 20, falling_time_until_terminal_velocity, falling_distance_until_terminal_velocity, terminal_velocity, k, h, g)
+        else:
+            times[4] = get_landing_time(fall_distance + 2030, falling_time_until_terminal_velocity, falling_distance_until_terminal_velocity, terminal_velocity, k, h, g)
+
+    return times.index(min(item for item in times if item >= 0))
+
+
 def get_cap(agent: VirxERLU, cap_, get_aerial_cap=False, is_anti_shot=False):
-    if len(agent.friends) == 0 or not (agent.me.minimum_time_to_ball > agent.friend_times[0].minimum_time_to_ball and is_anti_shot):
+    if agent.num_friends == 0 or not (agent.me.minimum_time_to_ball > agent.friend_times[0].minimum_time_to_ball and is_anti_shot):
         foes = len(tuple(foe for foe in agent.foes if not foe.demolished and foe.location.y * side(agent.team) < agent.ball.location.y * side(agent.team) - 150))
         if foes != 0 and agent.enemy_time_to_ball != 7:
             future_ball_location_slice = min(round(agent.enemy_time_to_ball * 1.15 * 60), agent.ball_prediction_struct.num_slices - 1)
@@ -369,9 +441,9 @@ def get_cap(agent: VirxERLU, cap_, get_aerial_cap=False, is_anti_shot=False):
     if not get_aerial_cap:
         return cap_
 
-    aerial_cap = agent.enemy_time_to_ball if agent.enemy_time_to_ball < cap_ and len(agent.friends) < 2 and len(agent.foes) != 0 else cap_
+    aerial_cap = agent.enemy_time_to_ball if agent.enemy_time_to_ball < cap_ and agent.num_friends < 2 and agent.num_foes != 0 else cap_
 
-    if len(agent.friends) == 0 and not agent.predictions['own_goal'] and len(agent.foes) != 0:
+    if agent.num_friends == 0 and not agent.is_own_goal and agent.num_foes != 0:
         aerial_cap /= 2
 
     return cap_, aerial_cap
