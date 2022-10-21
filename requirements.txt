@@ -1,4 +1,5 @@
-wheel
-numpy==1.*
 rlbot==1.*
-VirxERLU-CLib==2.*
+scipy==1.*
+numpy==1.21.*
+numba==0.56.*
+VirxERLU-RLib~=0.11.0

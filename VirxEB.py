@@ -1,17 +1,17 @@
 import itertools
 import json
+import math
 import os
 from enum import Enum
 
-import virxrlcu
+from rlbot.utils.game_state_util import CarState, GameState, Physics, Vector3
 from rlbot.utils.structures.quick_chats import QuickChats
 
-# don't import like this...
-from util.agent import (BallState, CarState, GameState, GameTickPacket,
-                        Physics, Vector, Vector3, VirxERLU, car_object, math,
-                        run_bot)
-from util.routines import *
-from util.tools import find_any_shot, find_shot
+from cutil.agent import Car
+from cutil.routines import *
+from cutil.tools import find_any_shot, find_shot
+from cutil.utils import *
+from util.agent import GameTickPacket, Vector, VirxERLU, run_bot
 from util.utils import *
 
 
@@ -35,6 +35,15 @@ class VirxEB(VirxERLU):
 
     def initialize_agent(self):
         super().initialize_agent()
+
+        self.all: list[Car] = ()
+        self.friends: list[Car] = ()
+        self.foes: list[Car] = ()
+        self.me = Car(self.index)
+
+        if self.game_mode == "heatseeker":
+            self.print("Preparing for heatseeker")
+            self.goalie = True
 
         self.cheating = self.true_name == "VirxEMB"
         if self.cheating:
@@ -111,13 +120,8 @@ class VirxEB(VirxERLU):
             self.print("No profiles found, creating directory for them")
             os.mkdir(os.path.dirname(__file__) + '/../../Vfiles')
 
-        match_settings = self.get_match_settings()
-
-        # Useful to keep separate from get_ready because humans can join/leave a match
-        self.friends = tuple(car_object(i, packet, match_settings) for i in range(packet.num_cars) if packet.game_cars[i].team is self.team and i != self.index)
-        self.foes = tuple(car_object(i, packet, match_settings) for i in range(packet.num_cars) if packet.game_cars[i].team != self.team)
-        self.me = car_object(self.index, packet, match_settings)
-        self.true_name = match_settings.PlayerConfigurations(self.index).Name()
+        self.all = tuple(Car(i, packet) for i in range(packet.num_cars))
+        self.update_cars_from_all()
 
         len_friends = str(len(self.friends))
         self.me.profile[len_friends] = [1, 1, 1, 1]
@@ -406,57 +410,24 @@ class VirxEB(VirxERLU):
         if self.is_clear():
             self.push(ceiling_shot())
         """
-
-    def time_to_ball(self, car):
+    
+    def time_to_ball(self, car: Car) -> float:
         if car.demolished:
             return 7
 
-        # Assemble data in a form that can be passed to C
-        me = car.get_raw(self)
-        airborne = me[5]
-
-        g_me = car.get_raw(self, car.location.z < 300)
-        is_on_ground = g_me[5] == 0
-
         profile = [profile > self.profiler_threshold for profile in car.profile[str(len(self.friends)) if car.team == self.team else str(len(self.foes) - 1)]]
-
-        game_info = (
-            self.boost_accel,
-            self.ball_radius
-        )
-
-        gravity = tuple(self.gravity)
 
         start_slice = max(12, min(round(car.minimum_time_to_ball * 60), self.ball_prediction_struct.num_slices - 1) - 60) if car.minimum_time_to_ball != 7 else 12
         end_slice = max(12, min(round(5.5 * 60), self.ball_prediction_struct.num_slices - 1) - 60)
 
-        # check every 12th slice
-        for ball_slice in self.ball_prediction_struct.slices[start_slice:end_slice:5]:
-            # Gather some data about the slice
-            time_remaining = ball_slice.game_seconds - self.time
+        # Construct the target
+        options = rlru.TargetOptions(start_slice, end_slice)
+        target_id = rlru.new_any_target(car.index, options)
+        
+        shot = rlru.get_shot_with_target(target_id, True, profile[0], profile[1], profile[2], profile[3], only=True)
 
-            if time_remaining <= 0:
-                return 7
-
-            ball_location = (ball_slice.physics.location.x, ball_slice.physics.location.y, ball_slice.physics.location.z)
-
-            if abs(ball_location[1]) > 5212.75:
-                return 7  # abandon search if ball is scored at/after this point
-
-            ball_info = (ball_location, (ball_slice.physics.velocity.x, ball_slice.physics.velocity.y, ball_slice.physics.velocity.z))
-
-            # Check if we can make a shot at this slice
-            # This operation is very expensive, so we use C to improve run time
-            # We also need to separate ground shots from aerials shots
-            shot = virxrlcu.parse_slice_for_shot(is_on_ground and profile[0], is_on_ground and profile[1], is_on_ground and profile[2], 0, time_remaining, *game_info, gravity, ball_info, g_me)
-
-            if shot['found'] == 1:
-                return time_remaining
-            else:
-                shot = virxrlcu.parse_slice_for_shot(0, 0, 0, profile[3] and ball_location[2] > 300, time_remaining, *game_info, gravity, ball_info, me, me[5])
-
-                if shot['found'] == 1:
-                    return time_remaining
+        if shot.found:
+            return shot.time - self.time
 
         return 7
 
@@ -538,8 +509,8 @@ class VirxEB(VirxERLU):
             if self.smart_shot(self.anti_shot, anti_shot_weight, friend_time_to_ball):
                 return
 
-            if self.is_clear():
-                self.push(short_shot(self.foe_goal.location))
+            # if self.is_clear():
+            #     self.push(short_shot(self.foe_goal.location))
 
         if self.me.airborne:
             self.air_recovery()
@@ -596,7 +567,7 @@ class VirxEB(VirxERLU):
             if not self.is_clear():
                 self.clear()
 
-            self.push(boost_down())
+            self.push(BoostDown())
             return
 
         if self.is_clear():
@@ -606,7 +577,7 @@ class VirxEB(VirxERLU):
         shot_name = self.get_stack_name()
         shot_time = self.stack[0].intercept_time if shot_name != "short_shot" else 7
 
-        if shot_time > 1 and (shot_name != "Aerial" or shot_time > 3):
+        if shot_time > 1 and (shot_name != "AerialShot" or shot_time > 3):
             is_short_shot = shot_name == "short_shot"
             for friend in self.friends:
                 action = friend.tmcp_action
@@ -698,9 +669,9 @@ class VirxEB(VirxERLU):
             self.backcheck()
             self.kickoff_done = True
         elif self.kickoff_check(self.kickoff_left) or self.kickoff_check(self.kickoff_right):
-            self.push(corner_kickoff_boost())
+            self.push(CornerKickoffBoost())
         elif self.kickoff_check(self.kickoff_back_left) or self.kickoff_check(self.kickoff_back_right):
-            self.push(back_offset_kickoff_boost())
+            self.push(BackOffsetKickoffBoost())
         else:
             self.print("Unknown kickoff position; skipping")
             self.kickoff_done = True
@@ -721,24 +692,24 @@ class VirxEB(VirxERLU):
 
         if self.kickoff_check(self.kickoff_back):
             if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default" or self.cheating:
-                self.push(generic_kickoff())
+                self.push(GenericKickoff())
             else:
-                self.push(back_kickoff())
+                self.push(BackKickoff())
         elif self.kickoff_check(self.kickoff_left):
             if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default" or self.cheating:
-                self.push(generic_kickoff())
+                self.push(GenericKickoff())
             else:
-                self.push(corner_kickoff(-1))
+                self.push(CornerKickoff(-1))
         elif self.kickoff_check(self.kickoff_right):
             if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default" or self.cheating:
-                self.push(generic_kickoff())
+                self.push(GenericKickoff())
             else:
-                self.push(corner_kickoff(1))
+                self.push(CornerKickoff(1))
         elif self.kickoff_check(self.kickoff_back_left) or self.kickoff_check(self.kickoff_back_right):
             if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default" or self.cheating:
-                self.push(generic_kickoff())
+                self.push(GenericKickoff())
             else:
-                self.push(back_offset_kickoff())
+                self.push(BackOffsetKickoff())
         else:
             self.print("Unknown kickoff position; skipping")
             self.kickoff_done = True
@@ -810,7 +781,6 @@ class VirxEB(VirxERLU):
         small_pads = (boost for boost in active_unclaimed_boosts if not boost.large)
         car_mag = self.me.velocity.magnitude()
         car_mag_adj = (car_mag + 2300) / 2
-        car_speed = self.me.local_velocity().x
         turn_rad = turn_radius(car_mag)
         car_z = self.me.location.z - self.me.hitbox.height / 2
 

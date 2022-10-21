@@ -1,29 +1,30 @@
 from __future__ import annotations
 
 import itertools
-import json
 import math
 import os
 import re
-import string
 from datetime import datetime
 from time import time_ns
 from traceback import print_exc
-from typing import List, Tuple
+from typing import Optional, Tuple
 
 import numpy as np
+import virx_erlu_rlib as rlru
+from numba import njit
 from rlbot.agents.base_agent import SimpleControllerState
 from rlbot.agents.standalone.standalone_bot import StandaloneBot, run_bot
-from rlbot.messages.flat import MatchSettings
-from rlbot.utils.game_state_util import (BallState, CarState, GameState,
-                                         Physics, Vector3)
-from rlbot.utils.structures.game_data_struct import GameTickPacket
+from rlbot.utils.rendering.rendering_manager import Color
+from rlbot.utils.structures.game_data_struct import (GameTickPacket, Rotator,
+                                                     Vector3)
+from rlbot.utils.structures.quick_chats import QuickChats
 
 # If you're putting your bot in the botpack, or submitting to a tournament, make this True!
+# Also consider setting "requires_tkinter" in Bot.cfg to False.
 TOURNAMENT_MODE = False
 
 # Make False to enable hot reloading, at the cost of the GUI
-EXTRA_DEBUGGING = True
+EXTRA_DEBUGGING = False
 
 if not TOURNAMENT_MODE and EXTRA_DEBUGGING:
     from gui import Gui
@@ -33,7 +34,7 @@ class VirxERLU(StandaloneBot):
     # Massive thanks to ddthj/GoslingAgent (GitHub repo) for the basis of VirxERLU
     # VirxERLU on VirxEC Showcase -> https://virxerlu.virxcase.dev/
     # Wiki -> https://github.com/VirxEC/VirxERLU/wiki
-    def __init__(self, name, team, index):
+    def __init__(self, name: str, team: int, index: int):
         super().__init__(name, team, index)
         self.tournament = TOURNAMENT_MODE
         self.extra_debugging = EXTRA_DEBUGGING
@@ -49,6 +50,7 @@ class VirxERLU(StandaloneBot):
         self.debug_ball_path = False
         self.debug_ball_path_precision = 10
         self.disable_driving = False
+        self.debug_vector = Vector()
 
     def initialize_agent(self):
         self.startup_time = time_ns()
@@ -66,8 +68,6 @@ class VirxERLU(StandaloneBot):
             f"-traceback ({T}).txt"
         )
 
-        self.print(f"True name: {self.true_name}")
-
         if not self.tournament and self.extra_debugging:
             self.gui = Gui(self)
             self.print("Starting the GUI...")
@@ -76,6 +76,9 @@ class VirxERLU(StandaloneBot):
         self.print("Building game information")
 
         match_settings = self.get_match_settings()
+        self.game_map = match_settings.GameMapUpk().decode()
+        self.print("Current map: " + self.game_map)
+
         mutators = match_settings.MutatorSettings()
 
         gravity = (
@@ -111,30 +114,59 @@ class VirxERLU(StandaloneBot):
             "heatseeker"
         )
 
-        self.gravity = gravity[mutators.GravityOption()]
-        self.boost_accel = boost_accel[mutators.BoostStrengthOption()]
-        self.boost_amount = boost_amount[mutators.BoostOption()]
-        self.game_mode = game_mode[match_settings.GameMode()]
+        if mutators is None:
+            self.print("WARNING: The state of any mutators is unknown! Assuming there are no physics-changing mutators and the gamemode is soccar on a standard map.")
+            self.gravity = gravity[0]
+            self.boost_accel = boost_accel[0]
+            self.boost_amount = boost_amount[0]
+            self.game_mode = game_mode[0]
+        else:
+            rlru.set_mutator_settings(mutators)
+            self.gravity = gravity[mutators.GravityOption()]
+            self.boost_accel = boost_accel[mutators.BoostStrengthOption()]
+            self.boost_amount = boost_amount[mutators.BoostOption()]
+            self.game_mode = game_mode[match_settings.GameMode()]
         self.ball_radius = 92.75
 
-        if self.game_mode == "heatseeker":
-            self.print("Preparing for heatseeker")
-            self.goalie = True
+        self.expected_pads = -1
 
-        self.friends = ()
-        self.foes = ()
-        self.me = car_object(self.index)
+        if self.game_mode in {"soccer", "rumble", "heetseeker"}:
+            if self.game_map == "ThrowbackStadium_P":
+                self.print("Loading Soccer on Throwback Stadium")
+                rlru.load_soccer_throwback()
+                self.expected_pads = 44
+            else:
+                self.print("Loading standard Soccer")
+                rlru.load_soccer()
+                self.expected_pads = 34
+        elif self.game_mode == "dropshot":
+            self.print("Loading Dropshot")
+            rlru.load_dropshot()
+            self.expected_pads = 0
+        elif self.game_mode == "hoops":
+            self.print("Loading Hoops")
+            rlru.load_hoops()
+            self.expected_pads = 20
+        else:
+            self.print("VirxERLU-RLib does not support this game mode: " + self.game_mode + "; Defaulting to soccer")
+            rlru.load_soccer()
+
+        self.all: list[Car] = ()
+        self.friends: list[Car] = ()
+        self.foes: list[Car] = ()
+        self.me = Car(self.index)
+
         self.ball_to_goal = -1
 
-        self.ball = ball_object()
-        self.game = game_object()
+        self.ball = Ball()
+        self.game = Game()
 
-        self.boosts = ()
+        self.boosts: list[BoostPad] = ()
 
-        self.friend_goal = goal_object(self.team)
-        self.foe_goal = goal_object(not self.team)
+        self.friend_goal = Goal(self.team)
+        self.foe_goal = Goal(not self.team)
 
-        self.stack = []
+        self.stack: list[BaseRoutine] = []
         self.time = 0
 
         self.ready = False
@@ -148,6 +180,8 @@ class VirxERLU(StandaloneBot):
         self.delta_time = 1 / 120
         self.last_sent_tmcp_packet = None
         # self.sent_tmcp_packet_times = {}
+        self.tick_times: list[float] = []
+        self.refresh_player_list_timer = 0
 
         self.future_ball_location_slice = 180
         self.ball_prediction_struct = None
@@ -157,16 +191,17 @@ class VirxERLU(StandaloneBot):
         if not self.tournament and self.extra_debugging:
             self.gui.stop()
 
-    def is_hot_reload_enabled(self):
+    def is_hot_reload_enabled(self) -> bool:
         # The tkinter GUI isn't compatible with hot reloading
         # Use the Continue and Spawn option in the RLBotGUI instead
         return not self.extra_debugging
 
     def get_ready(self, packet: GameTickPacket):
         field_info = self.get_field_info()
-        self.boosts = tuple(boost_object(i, field_info.boost_pads[i].location, field_info.boost_pads[i].is_full_boost) for i in range(field_info.num_boosts))
-        if len(self.boosts) != 34:
-            print(f"There are {len(self.boosts)} boost pads! @Tarehart REEEEE!")
+        self.boosts = tuple(BoostPad(i, field_info.boost_pads[i].location, field_info.boost_pads[i].is_full_boost) for i in range(field_info.num_boosts))
+        
+        if self.expected_pads != -1 and len(self.boosts) != self.expected_pads:
+            print(f"There are {len(self.boosts)} boost pads instead of {self.expected_pads}! @Tarehart REEEEE!")
             for i, boost in enumerate(self.boosts):
                 print(f"{boost.location} ({i})")
 
@@ -180,37 +215,71 @@ class VirxERLU(StandaloneBot):
 
         self.ready = True
 
+    def update_cars_from_all(self):
+        self.friends = tuple(car for car in self.all if car.team == self.team and car.index != self.index)
+        self.foes = tuple(car for car in self.all if car.team != self.team)
+        if len(self.all) > self.index:
+            self.me = self.all[self.index]
+            self.true_name = self.me.true_name
+
     def refresh_player_lists(self, packet: GameTickPacket):
-        match_settings = self.get_match_settings()
         # Useful to keep separate from get_ready because humans can join/leave a match
-        self.friends = tuple(car_object(i, packet, match_settings) for i in range(packet.num_cars) if packet.game_cars[i].team is self.team and i != self.index)
-        self.foes = tuple(car_object(i, packet, match_settings) for i in range(packet.num_cars) if packet.game_cars[i].team != self.team)
-        self.me = car_object(self.index, packet, match_settings)
+        self.all = tuple(Car(i, packet) for i in range(packet.num_cars))
+        self.update_cars_from_all()
 
-        try:
-            true_name = match_settings.PlayerConfigurations(self.index).Name()
-            self.true_name = true_name
-        except Exception:
-            print(f"{self.name}: I appear to have been forcefully pushed into a match! How rude.")
-
-    def push(self, routine):
+    def push(self, routine: BaseRoutine):
         self.stack.append(routine)
+        if hasattr(self.stack[-1], "on_push"):
+            self.stack[-1].on_push()
 
-    def pop(self):
+    def pop(self) -> BaseRoutine:
+        if hasattr(self.stack[-1], "pre_pop"):
+            self.stack[-1].pre_pop()
         return self.stack.pop()
 
-    def line(self, start, end, color=None):
-        if self.debugging and self.debug_lines:
-            color = color if color is not None else self.renderer.grey()
-            self.renderer.draw_line_3d(start.copy(), end.copy(), self.renderer.create_color(255, *color) if type(color) in {list, tuple} else color)
+    def clear(self):
+        for r in self.stack:
+            if hasattr(r, "pre_pop"):
+                r.pre_pop()
 
-    def polyline(self, vectors, color=None):
-        if self.debugging and self.debug_lines:
-            color = color if color is not None else self.renderer.grey()
-            vectors = tuple(vector.copy() for vector in vectors)
-            self.renderer.draw_polyline_3d(vectors, self.renderer.create_color(255, *color) if type(color) in {list, tuple} else color)
+        self.shooting = False
+        self.stack = []
 
-    def sphere(self, location, radius, color=None):
+    def is_clear(self) -> bool:
+        return len(self.stack) < 1
+
+    def get_color_from(self, color: Optional[list|tuple|Color]) -> Color:
+        if color is None:
+            return self.renderer.grey()
+        elif type(color) in {list, tuple}:
+            return self.renderer.create_color(255, *color)
+
+        return color
+
+    def line(self, start: Vector, end: Vector, color: Optional[list|tuple|Color]=None):
+        if self.debugging and self.debug_lines:
+            self.renderer.draw_line_3d(
+                start.to_vector3(),
+                end.to_vector3(),
+                self.get_color_from(color)
+            )
+
+    def polyline(self, vectors: list[Vector], color: Optional[list|Color]=None):
+        if self.debugging and self.debug_lines:
+            self.renderer.draw_polyline_3d(
+                tuple(vector.to_vector3() for vector in vectors),
+                self.get_color_from(color)
+            )
+
+    def point(self, point: Vector, color: Optional[list|Color]=None):
+        if self.debugging and self.debug_lines:
+            self.renderer.draw_line_3d(
+                (point - Vector(z=100)).to_vector3(),
+                (point + Vector(z=100)).to_vector3(),
+                self.get_color_from(color),
+            )
+
+    def sphere(self, location: Vector, radius: float, color: Optional[list|tuple|Color]=None):
         if self.debugging and self.debug_lines:
             x = Vector(x=radius)
             y = Vector(y=radius)
@@ -222,6 +291,8 @@ class VirxERLU(StandaloneBot):
             d3 = Vector(-diag, -diag, diag)
             d4 = Vector(-diag, diag, -diag)
 
+            color = self.get_color_from(color)
+
             self.line(location - x, location + x, color)
             self.line(location - y, location + y, color)
             self.line(location - z, location + z, color)
@@ -230,7 +301,7 @@ class VirxERLU(StandaloneBot):
             self.line(location - d3, location + d3, color)
             self.line(location - d4, location + d4, color)
 
-    def print(self, item):
+    def print(self, item=""):
         if not self.tournament:
             print(f"{self.name}: {item}")
 
@@ -240,42 +311,37 @@ class VirxERLU(StandaloneBot):
     def dbg_2d(self, item):
         self.debug[1].append(str(item))
 
-    def clear(self):
-        self.shooting = False
-        self.stack = []
-
-    def is_clear(self):
-        return len(self.stack) < 1
-
     def preprocess(self, packet: GameTickPacket):
-        if packet.num_cars != len(self.friends)+len(self.foes)+1 or self.odd_tick == 0:
+        current_time = time_ns() / 1e+9
+        if packet.num_cars != len(self.friends)+len(self.foes)+1 or abs(current_time - self.refresh_player_list_timer) > 0.5:
+            self.refresh_player_list_timer = current_time
             self.refresh_player_lists(packet)
+        else:
+            set(map(lambda pad: pad.update(packet), self.boosts))
+            set(map(lambda car: car.update(packet), self.all))
+            self.update_cars_from_all()
 
-        set(map(lambda car: car.update(packet), self.friends))
-        set(map(lambda car: car.update(packet), self.foes))
-        set(map(lambda pad: pad.update(packet), self.boosts))
-
+        rlru.tick(packet)
         self.ball.update(packet)
-        self.me.update(packet)
         self.game.update(self.team, packet)
 
         self.delta_time = self.game.time - self.time
         self.time = self.game.time
         self.gravity = self.game.gravity
 
-        self.ball_radius = self.ball.shape.hitbox.diameter if self.ball.shape.type in {1, 2} else (sum(self.ball.shape.hitbox.length, self.ball.shape.hitbox.width, self.ball.shape.hitbox.height) / 3)
+        self.ball_radius = self.ball.shape.hitbox.diameter if self.ball.shape.type in {1, 2} else (sum((self.ball.shape.hitbox.length, self.ball.shape.hitbox.width, self.ball.shape.hitbox.height)) / 3)
         self.ball_radius /= 2
 
         # When a new kickoff begins we empty the stack
         if not self.kickoff_flag and self.game.round_active and self.game.kickoff:
             self.kickoff_done = False
-            self.unpause_timer = self.time
             self.clear()
 
         # Tells us when to go for kickoff
         self.kickoff_flag = self.game.round_active and self.game.kickoff
 
         self.ball_to_goal = self.friend_goal.location.flat_dist(self.ball.location)
+        self.shooting = self.is_shooting()
 
         self.odd_tick += 1
 
@@ -300,12 +366,18 @@ class VirxERLU(StandaloneBot):
                 except Exception:
                     print_exc()
 
-    def is_shooting(self):
-        stack_routine_name = '' if self.is_clear() else self.stack[0].__class__.__name__
-        return stack_routine_name in {'Aerial', 'jump_shot', 'double_jump', 'ground_shot', 'short_shot'}
+    def is_shooting(self) -> bool:
+        if self.is_clear():
+            return False
+        return self.stack[0].__class__.__name__ in {'AerialShot', 'DoubleJumpShot', 'JumpShot', 'GroundShot', 'Aerial', 'double_jump', 'jump_shot', 'ground_shot', 'short_shot'}
 
     def get_output(self, packet: GameTickPacket) -> SimpleControllerState:
         try:
+            start = time_ns()
+
+            # reset the debug lists
+            self.debug = [[], []]
+
             # Reset controller
             self.controller.__init__(use_item=True)
 
@@ -319,8 +391,6 @@ class VirxERLU(StandaloneBot):
                 if not self.is_clear():
                     self.clear()
             elif self.game.round_active:
-                self.shooting = self.is_shooting()
-
                 try:
                     self.run()  # Run strategy code; This is a very expensive function to run
                 except Exception:
@@ -336,6 +406,12 @@ class VirxERLU(StandaloneBot):
                     if self.last_sent_tmcp_packet is None or self.tmcp_packet_is_different(tmcp_packet):
                         self.matchcomms.outgoing_broadcast.put_nowait(tmcp_packet)
                         self.last_sent_tmcp_packet = tmcp_packet
+
+                        # t = math.floor(self.time)
+                        # if self.sent_tmcp_packet_times.get(t) is None:
+                        #     self.sent_tmcp_packet_times[t] = 1
+                        # else:
+                        #     self.sent_tmcp_packet_times[t] += 1
                 except Exception:
                     t_file = os.path.join(self.traceback_file[0], self.name+"-TMCP"+self.traceback_file[1])
                     print(f"ERROR in {self.name} with sending TMCP packet; see '{t_file}'")
@@ -343,17 +419,22 @@ class VirxERLU(StandaloneBot):
 
                 # run the routine on the end of the stack
                 if not self.is_clear():
-                    r_name = self.stack[-1].__class__.__name__
                     try:
+                        r_name = self.stack[-1].__class__.__name__
                         self.stack[-1].run(self)
                     except Exception:
                         t_file = os.path.join(self.traceback_file[0], r_name+self.traceback_file[1])
                         print(f"ERROR in {self.name}'s {r_name} routine; see '{t_file}'")
                         print_exc(file=open(t_file, "a"))
 
-                # This is a ton of debugging stuff
                 if self.debugging:
                     if self.debug_3d_bool:
+                        if len(self.tick_times) > 0:
+                            avg_mspt = round(sum(self.tick_times) / len(self.tick_times), 3)
+                            self.dbg_3d(f"Avg. ms/t: {avg_mspt}")
+
+                        self.dbg_3d(f"# of targets: {rlru.get_targets_length()}")
+
                         if self.debug_stack_bool:
                             self.debug[0] = itertools.chain(self.debug[0], ("STACK:",), (item.__class__.__name__ for item in reversed(self.stack)))
 
@@ -392,14 +473,6 @@ class VirxERLU(StandaloneBot):
 
                         #     self.debug[1].insert(0, f"Avg. TMCP packets / sec: {avg_tmcp_packets}")
 
-                        for car in self.foes:
-                            profile = [round(car.profile[str(len(self.foes) - 1)][i], 3) for i in range(4)]
-                            self.debug[1].insert(0, f"{car.name} profile: {profile}")
-
-                        for car in self.friends:
-                            profile = [round(car.profile[str(len(self.friends))][i], 3) for i in range(4)]
-                            self.debug[1].insert(0, f"{car.name} profile: {profile}")
-
                         if self.delta_time != 0:
                             self.debug[1].insert(0, f"TPS: {round(1 / self.delta_time)}")
 
@@ -408,23 +481,27 @@ class VirxERLU(StandaloneBot):
 
                         self.renderer.draw_string_2d(20, 300, 2, 2, "\n".join(self.debug[1]), self.renderer.team_color(alt_color=True))
 
-                    if self.debug_ball_path and self.ball_prediction_struct is not None:
-                        self.polyline(tuple(Vector(ball_slice.physics.location.x, ball_slice.physics.location.y, ball_slice.physics.location.z) for ball_slice in self.ball_prediction_struct.slices[::self.debug_ball_path_precision]))
+                    if self.debug_ball_path:
+                        self.polyline(tuple(Vector(*rlru.get_slice_index(i).location) for i in range(0, rlru.get_num_ball_slices(), self.debug_ball_path_precision * 2)), color=self.renderer.yellow())
 
-                self.debug = [[], []]
+            end = time_ns()
+            self.tick_times.append(round((end - start) / 1_000_000, 3))
+            while len(self.tick_times) > 120:
+                del self.tick_times[0]
 
+            print(flush=True, end="")
             return SimpleControllerState() if self.disable_driving else self.controller
         except Exception:
             t_file = os.path.join(self.traceback_file[0], "VirxERLU"+self.traceback_file[1])
-            print(f"ERROR with VirxERLU in {self.name}; see '{t_file}' and please report the bug at 'https://github.com/VirxEC/VirxERLU/issues'")
+            print(f"ERROR with VirxERLU in {self.name}; see '{t_file}' and please report the bug at 'https://github.com/VirxEC/VirxERLU/issues'", flush=True)
             print_exc(file=open(t_file, "a"))
             return SimpleControllerState()
 
-    def get_minimum_game_time_to_ball(self):
+    def get_minimum_game_time_to_ball(self) -> float:
         # It is recommended that you override this
         return -1
 
-    def tmcp_packet_is_different(self, tmcp_packet):
+    def tmcp_packet_is_different(self, tmcp_packet: dict) -> bool:
         # If you're looking to overwrite this, you might want to do a version check
 
         # If the packets are the same
@@ -454,7 +531,7 @@ class VirxERLU(StandaloneBot):
         # Right now, this is only for DEFEND
         return False
 
-    def create_tmcp_packet(self):
+    def create_tmcp_packet(self) -> dict:
         # https://github.com/RLBot/RLBot/wiki/Team-Match-Communication-Protocol
         # don't worry about duplicate packets - this is handled automatically
         tmcp_packet = {
@@ -474,7 +551,7 @@ class VirxERLU(StandaloneBot):
 
         stack_routine_name = self.stack[0].__class__.__name__
 
-        if stack_routine_name in {'Aerial', 'jump_shot', 'ground_shot', 'double_jump', 'short_shot'}:
+        if stack_routine_name in {'AerialShot', 'DoubleJumpShot', 'JumpShot', "GroundShot", 'Aerial', 'jump_shot', 'ground_shot', 'double_jump', 'short_shot'}:
             tmcp_packet["action"] =  {
                 "type": "BALL",
                 "time": -1 if stack_routine_name == 'short_shot' else self.stack[0].intercept_time,
@@ -482,7 +559,7 @@ class VirxERLU(StandaloneBot):
             }
             return tmcp_packet
 
-        if stack_routine_name == "goto_boost":
+        if stack_routine_name in {"GoToBoost", "goto_boost"}:
             tmcp_packet["action"] = {
                 "type": "BOOST",
                 "target": self.stack[0].boost.index
@@ -496,38 +573,41 @@ class VirxERLU(StandaloneBot):
         }
         return tmcp_packet
 
-    @DeprecationWarning
-    def get_tmcp_action(self, tmcp_version):
-        # don't use this - overwrite create_tmcp_packet instead
-        return None
-
-    def handle_tmcp_packet(self, packet):
+    def handle_tmcp_packet(self, packet: dict):
         # https://github.com/RLBot/RLBot/wiki/Team-Match-Communication-Protocol
 
         for friend in self.friends:
-            if friend.index == packet.get('index'):
-                friend.tmcp_action = packet.get('action')
+            if friend.index == packet['index']:
+                friend.tmcp_action = packet['action']
 
-    def handle_match_comm(self, msg):
+    def handle_match_comm(self, msg: dict):
         pass
 
     def run(self):
         pass
 
-    def handle_quick_chat(self, index, team, quick_chat):
+    def handle_quick_chat(self, index: int, team: int, quick_chat: QuickChats):
         pass
 
     def init(self):
         pass
 
 
-CHARS = list(string.ascii_letters) + list(string.digits) + list(string.punctuation) + [" "]
+class BaseRoutine:
+    def run(self, agent: VirxERLU):
+        raise NotImplementedError
+
+    def on_push(self):
+        pass
+
+    def pre_pop(self):
+        pass
 
 
-class car_object:
+class Car:
     # objects convert the gametickpacket in something a little friendlier to use
     # and are automatically updated by VirxERLU as the game runs
-    def __init__(self, index, packet: GameTickPacket=None, match_settings: MatchSettings=None, profile=True):
+    def __init__(self, index: int, packet: Optional[GameTickPacket]=None):
         self.location = Vector()
         self.orientation = Matrix3()
         self.velocity = Vector()
@@ -544,61 +624,32 @@ class car_object:
         self.true_name = None
         self.land_time = 0
 
-        self.minimum_time_to_ball = 7
-
-        if match_settings is not None:
-            try:
-                self.true_name = match_settings.PlayerConfigurations(index).Name()
-            except Exception:
-                pass
-
         if packet is not None:
             car = packet.game_cars[self.index]
 
             self.name = car.name
             if self.true_name is None: self.true_name = re.split(r' \(\d+\)$', self.name)[0]  # e.x. 'ABot (12)' will instead be just 'ABot'
             self.team = car.team
-            self.hitbox = hitbox_object(car.hitbox.length, car.hitbox.width, car.hitbox.height, Vector(car.hitbox_offset.x, car.hitbox_offset.y, car.hitbox_offset.z))
+            self.hitbox = Hitbox(car.hitbox.length, car.hitbox.width, car.hitbox.height, Vector(car.hitbox_offset.x, car.hitbox_offset.y, car.hitbox_offset.z))
 
             self.update(packet)
-
-            if not profile:
-                self.profile = {}
-                return
-
-            uuid = int("".join(reversed(list(str(sum(reversed(tuple(int(str(CHARS.index(char) if char in CHARS else len(CHARS)) + "0" * i) for i, char in enumerate(self.true_name)))))))))
-            self.profile_path = os.path.dirname(__file__) + f'/../../Vfiles/{uuid}.cpf'
-            if os.path.isfile(self.profile_path):
-                with open(self.profile_path, "r") as f:
-                    while 1:
-                        try:
-                            self.profile = json.load(f)
-                            break
-                        except Exception as e:
-                            print(f"Error in {self.true_name}'s profile: {e}")
-                            continue
-            else:
-                self.profile = {}
-                with open(self.profile_path, "w") as f:
-                    json.dump(self.profile, f)
 
             return
 
         self.name = None
         self.true_name = None
         self.team = -1
-        self.hitbox = hitbox_object()
-        self.profile = {}
+        self.hitbox = Hitbox()
 
-    def local(self, value):
+    def local(self, value: Vector) -> Vector:
         # Generic localization
         return self.orientation.dot(value)
 
-    def global_(self, value):
+    def global_(self, value: Vector) -> Vector:
         # Converts a localized vector to a global vector
         return self.orientation.g_dot(value)
 
-    def local_velocity(self, velocity=None):
+    def local_velocity(self, velocity: Optional[Vector]=None) -> Vector:
         # Returns the velocity of an item relative to the car
         # x is the velocity forwards (+) or backwards (-)
         # y is the velocity to the right (+) or left (-)
@@ -608,45 +659,32 @@ class car_object:
 
         return self.local(velocity)
 
-    def local_location(self, location):
+    def local_location(self, location: Vector) -> Vector:
         # Returns the location of an item relative to the car
         # x is how far the location is forwards (+) or backwards (-)
         # y is how far the location is to the right (+) or left (-)
         # z is how far the location is upwards (+) or downwards (-)
         return self.local(location - self.location)
 
-    def global_location(self, location):
+    def global_location(self, location: Vector) -> Vector:
         # Converts a localized location to a global location
         return self.global_(location) + self.location
 
-    def local_flatten(self, value):
+    def local_flatten(self, value: Vector) -> Vector:
         # Flattens a vector relative to the car
         return self.global_(self.local(value).flatten())
 
-    def local_flatten_location(self, location):
+    def local_flatten_location(self, location: Vector) -> Vector:
         # Flattens a location relative to the car
         return self.global_location(self.local_location(location).flatten())
-
-    def get_raw(self, agent, force_on_ground=False):
-        return (
-            tuple(self.location),
-            tuple(self.velocity),
-            (tuple(self.forward), tuple(self.right), tuple(self.up)),
-            tuple(self.angular_velocity),
-            int(self.demolished),
-            int(self.airborne and not force_on_ground),
-            int(self.supersonic),
-            int(self.jumped),
-            int(self.doublejumped),
-            self.boost if agent.boost_amount != 'unlimited' else 255,
-            self.index,
-            tuple(self.hitbox),
-            tuple(self.hitbox.offset)
-        )
 
     def update(self, packet: GameTickPacket):
         car = packet.game_cars[self.index]
         car_phy = car.physics
+
+        if self.airborne and car.has_wheel_contact:
+            self.land_time = packet.game_info.seconds_elapsed
+
         self.location = Vector.from_vector(car_phy.location)
         self.velocity = Vector.from_vector(car_phy.velocity)
         self._local_velocity = self.local(self.velocity)
@@ -659,43 +697,41 @@ class car_object:
         self.doublejumped = car.double_jumped
         self.boost = car.boost
 
-        if self.airborne and car.has_wheel_contact:
-            self.land_time = packet.game_info.seconds_elapsed
-
     @property
-    def rotation(self):
+    def rotation(self) -> Tuple[Vector, Vector, Vector]:
         return self.orientation.rotation
 
     @property
-    def pitch(self):
+    def pitch(self) -> float:
         return self.orientation.pitch
 
     @property
-    def yaw(self):
+    def yaw(self) -> float:
         return self.orientation.yaw
 
     @property
-    def roll(self):
+    def roll(self) -> float:
         return self.orientation.roll
 
     @property
-    def forward(self):
+    def forward(self) -> Vector:
         # A vector pointing forwards relative to the cars orientation. Its magnitude == 1
         return self.orientation.forward
 
     @property
-    def right(self):
-        # A vector pointing right relative to the cars orientation. Its magnitude == 1
+    def right(self) -> Vector:
+        # A vector pointing left relative to the cars orientation. Its magnitude == 1
         return self.orientation.right
 
     @property
-    def up(self):
+    def up(self) -> Vector:
         # A vector pointing up relative to the cars orientation. Its magnitude == 1
         return self.orientation.up
+car_object = Car  # legacy
 
 
-class hitbox_object:
-    def __init__(self, length=0, width=0, height=0, offset=None):
+class Hitbox:
+    def __init__(self, length: float=0, width: float=0, height: float=0, offset=None):
         self.length = length
         self.width = width
         self.height = height
@@ -704,11 +740,11 @@ class hitbox_object:
             offset = Vector()
         self.offset = offset
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
         return (self.length, self.width, self.height)[index]
 
     # len(self)
-    def __len__(self):
+    def __len__(self) -> int:  # Literal[3]:
         return 3  # this is a 3 dimensional vector, so we return 3
 
     # str(self)
@@ -718,26 +754,29 @@ class hitbox_object:
 
     # repr(self)
     def __repr__(self):
-        return f"hitbox_object(length={self.length}, width={self.width}, height={self.height})"
+        return f"Hitbox(length={self.length}, width={self.width}, height={self.height})"
 
     # round(self)
-    def __round__(self, decimals=0) -> hitbox_object:
+    def __round__(self, ndigits: Optional[int]=None) -> Hitbox:
         # Rounds all of the values
-        return hitbox_object(*(round(euler_angle) for euler_angle in self))
+        return Hitbox(*(round(euler_angle, ndigits) for euler_angle in self))
+hitbox_object = Hitbox  # legacy
 
 
-class hitbox_sphere:
-    def __init__(self, diameter=185.5):
+class HitboxSphere:
+    def __init__(self, diameter: float=185.5):
         self.diameter = diameter
+hitbox_sphere = HitboxSphere  # legacy
 
 
-class hitbox_cylinder:
-    def __init__(self, diameter, height):
+class HitboxCylinder:
+    def __init__(self, diameter: float=185.5, height: float=185.5):
         self.diameter = diameter
         self.height = height
+hitbox_cylinder = HitboxCylinder  # legacy
 
 
-class last_touch:
+class LastTouch:
     def __init__(self):
         self.location = Vector()
         self.normal = Vector()
@@ -749,10 +788,11 @@ class last_touch:
         self.location = Vector.from_vector(touch.hit_location)
         self.normal = Vector.from_vector(touch.hit_normal)
         self.time = touch.time_seconds
-        self.car = car_object(touch.player_index, packet, profile=False)
+        self.car = Car(touch.player_index, packet)
+last_touch = LastTouch  # legacy
 
 
-class ball_shape:
+class BallShape:
     def __init__(self):
         self.type = -1
         self.hitbox = None
@@ -762,36 +802,34 @@ class ball_shape:
         self.type = shape.type
 
         if self.type == 0:
-            self.hitbox = hitbox_object(shape.box.length, shape.box.width, shape.box.height)
+            self.hitbox = Hitbox(shape.box.length, shape.box.width, shape.box.height)
         elif self.type == 1:
-            self.hitbox = hitbox_sphere(shape.sphere.diameter)
+            self.hitbox = HitboxSphere(shape.sphere.diameter)
         elif self.type == 2:
-            self.hitbox = hitbox_cylinder(shape.cylinder.diameter, shape.cylinder.height)
+            self.hitbox = HitboxCylinder(shape.cylinder.diameter, shape.cylinder.height)
+ball_shape = BallShape  # legacy
 
 
-class ball_object:
+class Ball:
     def __init__(self):
         self.location = Vector()
         self.velocity = Vector()
-        self.last_touch = last_touch()
-        self.shape = ball_shape()
-
-    def get_raw(self):
-        return (
-            tuple(self.location),
-            tuple(self.velocity)
-        )
+        self.angular_velocity = Vector()
+        self.last_touch = LastTouch()
+        self.shape = BallShape()
 
     def update(self, packet: GameTickPacket):
         ball = packet.game_ball
         self.location = Vector.from_vector(ball.physics.location)
         self.velocity = Vector.from_vector(ball.physics.velocity)
+        self.angular_velocity = Vector.from_vector(ball.physics.angular_velocity)
         self.last_touch.update(packet)
         self.shape.update(packet)
+ball_object = Ball
 
 
-class boost_object:
-    def __init__(self, index, location, large):
+class BoostPad:
+    def __init__(self, index: int, location: Vector, large: bool):
         self.index = index
         self.location = Vector.from_vector(location)
         self.active = True
@@ -799,19 +837,21 @@ class boost_object:
 
     def update(self, packet: GameTickPacket):
         self.active = packet.game_boosts[self.index].is_active
+boost_object = BoostPad  # legacy
 
 
-class goal_object:
+class Goal:
     # This is a simple object that creates/holds goalpost locations for a given team (for soccer on standard maps only)
-    def __init__(self, team):
+    def __init__(self, team: int):
         team = 1 if team == 1 else -1
         self.location = Vector(0, team * 5120, 321.3875)  # center of goal line
         # Posts are closer to x=893, but this allows the bot to be a little more accurate
         self.left_post = Vector(team * 800, team * 5120, 321.3875)
         self.right_post = Vector(-team * 800, team * 5120, 321.3875)
+goal_object = Goal  # legacy
 
 
-class game_object:
+class Game:
     # This object holds information about the current match
     def __init__(self):
         self.time = 0
@@ -824,7 +864,7 @@ class game_object:
         self.foe_score = 0
         self.gravity = Vector()
 
-    def update(self, team, packet: GameTickPacket):
+    def update(self, team: int, packet: GameTickPacket):
         game = packet.game_info
         self.time = game.seconds_elapsed
         self.time_remaining = game.game_time_remaining
@@ -835,6 +875,7 @@ class game_object:
         self.friend_score = packet.teams[team].score
         self.foe_score = packet.teams[not team].score
         self.gravity.z = game.world_gravity_z
+game_object = Game  # legacy
 
 
 class Matrix3:
@@ -848,56 +889,58 @@ class Matrix3:
     # ie: local_ball_location = Matrix3.dot(ball.location - car.location)
     # to convert from local coordinates back to global coordinates:
     # global_ball_location = Matrix3.g_dot(local_ball_location) + car_location
-    def __init__(self, pitch=0, yaw=0, roll=0, simple=False):
+    def __init__(self, pitch: float=0, yaw: float=0, roll: float=0, simple: bool=False):
         self.pitch = pitch
         self.yaw = yaw
         self.roll = roll
 
         if simple:
-            self._np = np.array(((0, 0, 0), (0, 0, 0), (0, 0, 0)))
-            self.rotation = (Vector(), Vector(), Vector())
+            self._np = np.zeros((3, 3), dtype=np.float32)
             return
+        
+        self._np = Matrix3._new_matrix(pitch, yaw, roll)
 
-        CP = math.cos(self.pitch)
-        SP = math.sin(self.pitch)
-        CY = math.cos(self.yaw)
-        SY = math.sin(self.yaw)
-        CR = math.cos(self.roll)
-        SR = math.sin(self.roll)
+    @staticmethod
+    @njit('Array(float32, 2, "C")(float32, float32, float32)', fastmath=True, cache=True)
+    def _new_matrix(pitch: float, yaw: float, roll: float) -> np.ndarray:
+        CP = math.cos(pitch)
+        SP = math.sin(pitch)
+        CY = math.cos(yaw)
+        SY = math.sin(yaw)
+        CR = math.cos(roll)
+        SR = math.sin(roll)
+
         # List of 3 vectors, each descriping the direction of an axis: Forward, Left, and Up
-        self._np = np.array((
+        return np.array((
             (CP*CY, CP*SY, SP),
             (CY*SP*SR-CR*SY, SY*SP*SR+CR*CY, -CP*SR),
             (-CR*CY*SP-SR*SY, -CR*SY*SP+SR*CY, CP*CR)
-        ))
-
-        self.rotation = tuple(Vector(*item) for item in self._np)
+        ), dtype=np.float32)
 
     @property
-    def forward(self):
-        return self.rotation[0]
+    def rotation(self) -> Tuple[Vector, Vector, Vector]:
+        return tuple(Vector(*item) for item in self._np)
 
     @property
-    def right(self):
-        return self.rotation[1]
+    def forward(self) -> Vector:
+        return Vector(*self._np[0])
 
     @property
-    def up(self):
-        return self.rotation[2]
+    def right(self) -> Vector:
+        return Vector(*self._np[1])
 
-    @DeprecationWarning
     @property
-    def data(self):
-        return self.rotation
+    def up(self) -> Vector:
+        return Vector(*self._np[2])
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: int) -> Vector:
         return self.rotation[key]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"[{self.forward}\n {self.right}\n {self.up}]"
 
     @staticmethod
-    def from_rotator(rotator) -> Matrix3:
+    def from_rotator(rotator: Rotator) -> Matrix3:
         return Matrix3(rotator.pitch, rotator.yaw, rotator.roll)
 
     @staticmethod
@@ -911,7 +954,7 @@ class Matrix3:
         right = up.cross(forward).normalize()
 
         # generate the orientation matrix
-        mat._np = np.array((tuple(forward), tuple(right), tuple(up)))
+        mat._np = np.array((forward._np, right._np, up._np), dtype=np.float32)
         mat.rotation = (forward, right, up)
 
         # generate the pitch/yaw/roll
@@ -931,21 +974,21 @@ class Matrix3:
             vec = vec._np
         return Vector(np_arr=self._np[0].dot(vec[0]) + self._np[1].dot(vec[1]) + self._np[2].dot(vec[2]))
 
-    def det(self):
+    def det(self) -> Vector:
         return np.linalg.det(self._np).item()
 
 # Vector supports 1D, 2D and 3D Vectors, as well as calculations between them
 # Arithmetic with 1D and 2D lists/tuples aren't supported - just set the remaining values to 0 manually
 # With this new setup, Vector is much faster because it's just a wrapper for numpy
 class Vector:
-    def __init__(self, x: float = 0, y: float = 0, z: float = 0, np_arr=None):
+    def __init__(self, x: float=0, y: float=0, z: float=0, np_arr: Optional[np.ndarray]=None):
         # this is a private property - this is so all other things treat this class like a list, and so should you!
-        self._np = np.array([x, y, z]) if np_arr is None else np_arr
+        self._np = np.array([x, y, z], dtype=np.float32) if np_arr is None else np.float32(np_arr)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
         return self._np[index].item()
 
-    def __setitem__(self, index, value):
+    def __setitem__(self, index: int, value: float):
         self._np[index] = value
 
     @property
@@ -953,7 +996,7 @@ class Vector:
         return self._np[0].item()
 
     @x.setter
-    def x(self, value):
+    def x(self, value: float):
         self._np[0] = value
 
     @property
@@ -961,7 +1004,7 @@ class Vector:
         return self._np[1].item()
 
     @y.setter
-    def y(self, value):
+    def y(self, value: float):
         self._np[1] = value
 
     @property
@@ -969,11 +1012,11 @@ class Vector:
         return self._np[2].item()
 
     @z.setter
-    def z(self, value):
+    def z(self, value: float):
         self._np[2] = value
 
     # self == value
-    def __eq__(self, value):
+    def __eq__(self, value: float|Vector):
         if isinstance(value, float) or isinstance(value, int):
             return self.magnitude() == value
 
@@ -1031,29 +1074,36 @@ class Vector:
         return self * (1 / value)
 
     # round(self)
-    def __round__(self, decimals=0) -> Vector:
+    def __round__(self, decimals: int=0) -> Vector:
         # Rounds all of the values
         return Vector(np_arr=np.around(self._np, decimals=decimals))
 
+    # abs(self)
+    def __abs__(self) -> Vector:
+        return Vector(np_arr=np.absolute(self._np))
+
     @staticmethod
-    def from_vector(vec) -> Vector:
+    def from_vector(vec: Vector3) -> Vector:
         return Vector(vec.x, vec.y, vec.z)
+
+    def to_vector3(self) -> Vector3:
+        return Vector3(self.x, self.y, self.z)
 
     def magnitude(self) -> float:
         # Returns the length of the vector
         return np.linalg.norm(self._np).item()
 
-    def _magnitude(self) -> np.float64:
-        # Returns the length of the vector in a numpy float 64
+    def _magnitude(self) -> np.float32:
+        # Returns the length of the vector in a numpy float f32
         return np.linalg.norm(self._np)
 
-    def dot(self, value: Vector) -> float:
+    def dot(self, value: Vector|np.ndarray) -> float:
         # Returns the dot product of two vectors
         if hasattr(value, "_np"):
             value = value._np
         return self._np.dot(value).item()
 
-    def cross(self, value: Vector) -> Vector:
+    def cross(self, value: Vector|np.ndarray) -> Vector:
         # Returns the cross product of two vectors
         if hasattr(value, "_np"):
             value = value._np
@@ -1063,7 +1113,7 @@ class Vector:
         # Returns a copy of the vector
         return Vector(*self._np)
 
-    def normalize(self, return_magnitude=False) -> List[Vector, float] or Vector:
+    def normalize(self, return_magnitude: bool=False) -> Tuple[Vector, float] | Vector:
         # normalize() returns a Vector that shares the same direction but has a length of 1
         # normalize(True) can also be used if you'd like the length of this Vector (used for optimization)
         magnitude = self._magnitude()
@@ -1127,7 +1177,7 @@ class Vector:
 
         return s
 
-    def dist(self, value: Vector) -> float:
+    def dist(self, value: Vector|np.ndarray) -> float:
         # Distance between 2 vectors
         if hasattr(value, "_np"):
             value = value._np
@@ -1141,7 +1191,7 @@ class Vector:
         # Caps all values in a Vector between 'low' and 'high'
         return Vector(*(max(min(item, high), low) for item in self._np))
 
-    def midpoint(self, value: Vector) -> Vector:
+    def midpoint(self, value: Vector|np.ndarray) -> Vector:
         # Midpoint of the 2 vectors
         if hasattr(value, "_np"):
             value = value._np
