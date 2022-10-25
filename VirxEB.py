@@ -509,8 +509,8 @@ class VirxEB(VirxERLU):
             if self.smart_shot(self.anti_shot, anti_shot_weight, friend_time_to_ball):
                 return
 
-            # if self.is_clear():
-            #     self.push(short_shot(self.foe_goal.location))
+            if self.is_clear():
+                self.push(ShortShot(self.foe_goal.location))
 
         if self.me.airborne:
             self.air_recovery()
