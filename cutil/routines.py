@@ -1,6 +1,34 @@
-from util import utils
+from typing import Optional
+
+import numpy as np
+from numba import njit
+from util import routines, utils
 from util.agent import Vector, VirxERLU
-from util.routines import *
+from util.routines import BaseRoutine
+
+
+class GroundShot(routines.GroundShot):
+    def __init__(self, intercept_time: float, target_id: int, is_forwards: bool, shot_vector: Optional[Vector], weight: int):
+        super().__init__(intercept_time, target_id, is_forwards, shot_vector)
+        self.weight = weight
+
+
+class JumpShot(routines.JumpShot):
+    def __init__(self, intercept_time: float, target_id: int, is_forwards: bool, shot_vector: Optional[Vector], weight: int):
+        super().__init__(intercept_time, target_id, is_forwards, shot_vector)
+        self.weight = weight
+
+
+class DoubleJumpShot(routines.DoubleJumpShot):
+    def __init__(self, intercept_time: float, target_id: int, is_forwards: bool, shot_vector: Optional[Vector], weight: int):
+        super().__init__(intercept_time, target_id, is_forwards, shot_vector)
+        self.weight = weight
+
+
+class AerialShot(routines.AerialShot):
+    def __init__(self, intercept_time: float, target_id: int, is_forwards: bool, shot_vector: Optional[Vector], weight: int):
+        super().__init__(intercept_time, target_id, is_forwards, shot_vector)
+        self.weight = weight
 
 
 class WaveDash(BaseRoutine):
@@ -56,7 +84,7 @@ class WaveDash(BaseRoutine):
             agent.pop()
         elif T > 2:
             agent.pop()
-            agent.push(Recovery())
+            agent.push(routines.Recovery())
         elif agent.me.location.z + (agent.me.velocity.z * 0.15) < 5:
             agent.controller.jump = True
             agent.controller.yaw = 0
@@ -119,12 +147,12 @@ class FaceTarget(BaseRoutine):
             else:
                 agent.pop()
                 if self.start_loc is not None:
-                    agent.push(GoTo(self.start_loc, target, True))
+                    agent.push(routines.GoTo(self.start_loc, target, True))
 
 
 class Shadow(BaseRoutine):
     def __init__(self):
-        self.goto = goto(Vector(), brake=True)
+        self.goto = routines.GoTo(Vector(), brake=True)
 
     def run(self, agent: VirxERLU):
         ball_loc = self.get_ball_loc(agent, True)
@@ -140,7 +168,7 @@ class Shadow(BaseRoutine):
         if self_to_target < 100 * (agent.me.velocity.magnitude() / 500) and ball_loc.y < -640 and agent.me.velocity.magnitude() < 50 and abs(Vector(x=1).angle2D(agent.me.local_location(agent.ball.location))) > 1:
             agent.pop()
             if agent.num_friends > 1:
-                agent.push(face_target(ball=True))
+                agent.push(routines.FaceTarget(ball=True))
         else:
             self.goto.target = target
             self.goto.vector = ball_loc * Vector(y=utils.side(agent.team)) if target.y * utils.side(agent.team) < 1280 else None
@@ -220,13 +248,13 @@ class Shadow(BaseRoutine):
 
 class Retreat(BaseRoutine):
     def __init__(self):
-        self.goto = GoTo(Vector(), brake=True)
+        self.goto = routines.GoTo(Vector(), brake=True)
 
     def run(self, agent: VirxERLU):
         ball = self.get_ball_loc(agent, render=True)
         target = self.get_target(agent, ball=ball)
 
-        if shadow().is_viable(agent, ignore_distance=True):
+        if routines.Shadow().is_viable(agent, ignore_distance=True):
             agent.pop()
             agent.push(Shadow())
             return
@@ -374,7 +402,7 @@ class CornerKickoff(BaseRoutine):
                 agent.controller.steer = self.direction
             elif self.flip_done is None:
                 if self.flip is None:
-                    self.flip = Flip(Vector(64, -36 * utils.sign(agent.me.location.x * utils.side(agent.team))))
+                    self.flip = routines.Flip(Vector(64, -36 * utils.sign(agent.me.location.x * utils.side(agent.team))))
 
                 self.flip_done = self.flip.run(agent, manual=True, recovery_target=agent.ball.location.flatten())
                 if abs(Vector(x=1).angle2D(agent.me.local_location(agent.ball.location))) < 0.05:
@@ -386,7 +414,7 @@ class CornerKickoff(BaseRoutine):
                 return
             elif self.flip_done2 is None:
                 if self.flip2 is None:
-                    self.flip2 = flip(agent.me.local_location(agent.foe_goal.location))
+                    self.flip2 = routines.Flip(agent.me.local_location(agent.foe_goal.location))
 
                 self.flip_done2 = self.flip2.run(agent, manual=True)
             else:
@@ -408,7 +436,7 @@ class CornerKickoffBoost(BaseRoutine):
     def run(self, agent: VirxERLU):
         if not self.goto:
             self.goto = True
-            agent.push(goto_boost(min(tuple(boost for boost in agent.boosts if boost.large and boost.active), key=lambda boost: boost.location.flat_dist(agent.me.location))))
+            agent.push(routines.GoToBoost(min(tuple(boost for boost in agent.boosts if boost.large and boost.active), key=lambda boost: boost.location.flat_dist(agent.me.location))))
         else:
             agent.pop()
             agent.kickoff_done = True
@@ -427,13 +455,13 @@ class BackOffsetKickoffBoost:
             if self.goto is None:
                 self.small_boost = min(tuple(boost for boost in agent.boosts if not boost.large and boost.active and abs(boost.location.y) > 3000 and abs(boost.location.x) > 50), key=lambda boost: boost.location.flat_dist(agent.me.location))
                 self.large_boost = min(tuple(boost for boost in agent.boosts if boost.large and boost.active and abs(boost.location.y) > 3000), key=lambda boost: boost.location.flat_dist(agent.me.location))
-                self.goto = goto(self.small_boost.location, self.large_boost.location)
+                self.goto = routines.GoTo(self.small_boost.location, self.large_boost.location)
 
             self.small = not self.small_boost.active
             self.goto.run(agent, manual=True)
             agent.controller.boost = True
         elif not self.large:
-            agent.push(goto_boost(self.large_boost))
+            agent.push(routines.GoToBoost(self.large_boost))
             self.large = True
         else:
             agent.pop()
@@ -472,12 +500,12 @@ class BackOffsetKickoff:
                     if agent.boost_amount == "default":
                         agent.push(BackOffsetKickoffBoost())
                     else:
-                        agent.push(retreat())
+                        agent.push(routines.Retreat())
                         agent.kickoff_done = True
                     return
 
                 self.boost_pad = min(self.boost_pad, key=lambda boost: boost.location.flat_dist(agent.me.location))
-                self.flip = flip(Vector(27, 73 * utils.sign(agent.me.location.x * utils.side(agent.team))))
+                self.flip = routines.Flip(Vector(27, 73 * utils.sign(agent.me.location.x * utils.side(agent.team))))
 
             self.flip_done = self.flip.run(agent, manual=True, recovery_target=agent.ball.location)
         elif self.flip_predrive is None or agent.time - self.flip_predrive <= 0.19:
@@ -489,7 +517,7 @@ class BackOffsetKickoff:
             agent.controller.boost = agent.me.local_velocity().x < 2250
         elif self.flip_done2 is None:
             if self.flip2 is None:
-                self.flip2 = flip(agent.me.local_location(agent.ball.location))
+                self.flip2 = routines.Flip(agent.me.local_location(agent.ball.location))
 
             self.flip_done2 = self.flip2.run(agent, manual=True)
         else:
@@ -545,12 +573,12 @@ class BackKickoff:
 
         if time_elapsed > 2.7333:
             agent.pop()
-            agent.push(recovery())
+            agent.push(routines.Recovery())
             agent.kickoff_done = True
 
 class BoostDown(BaseRoutine):
     def __init__(self):
-        self.face = ball_recovery()
+        self.face = routines.BallRecovery()
 
     def run(self, agent: VirxERLU):
         if agent.me.boost == 0:
@@ -586,7 +614,7 @@ class ShortShot(BaseRoutine):
             eta = 1.5
 
         #If we are approaching the ball from the wrong side the car will try to only hit the very edge of the ball
-        left_vector = car_to_ball.cross((0 ,0 ,1))
+        left_vector = car_to_ball.cross((0, 0, 1))
         right_vector = car_to_ball.cross((0, 0, -1))
         target_vector = -ball_to_target.clamp(left_vector, right_vector)
         final_target = agent.ball.location + (target_vector * (distance / 2))
@@ -603,4 +631,4 @@ class ShortShot(BaseRoutine):
 
         if abs(target_angles[1]) < 0.05 and (eta < 0.45 or distance < 150):
             agent.pop()
-            agent.push(Flip(agent.me.local(car_to_ball)))
+            agent.push(routines.Flip(agent.me.local(car_to_ball)))

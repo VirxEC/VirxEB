@@ -1,9 +1,10 @@
 import hashlib
 import json
 import os
+from pathlib import Path
 from typing import Optional
 
-from util.agent import Car, GameTickPacket, VirxERLU
+from util.agent import Car, GameTickPacket
 
 
 class Car(Car):
@@ -13,12 +14,12 @@ class Car(Car):
         self.minimum_time_to_ball = 7
         self.profile = {}
 
-        if not profile:
+        if not profile or self.true_name is None:
             return
 
         uuid = hashlib.sha1(self.true_name.encode()).hexdigest()
-        self.profile_path = os.path.dirname(__file__) + f'/../../Vfiles/{uuid}.cpf'
-        if os.path.isfile(self.profile_path):
+        self.profile_path = Path(os.path.dirname(__file__)).parent.parent / 'Vfiles' / f'{uuid}.json'
+        if self.profile_path.exists():
             with open(self.profile_path, "r") as f:
                 while 1:
                     try:
@@ -28,6 +29,7 @@ class Car(Car):
                         print(f"Error in {self.true_name}'s profile: {e}")
                         continue
         else:
-            self.profile = {}
+            # create the parent directory if it doesn't exist
+            self.profile_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.profile_path, "w") as f:
-                json.dump(self.profile, f)
+                f.write("{}")

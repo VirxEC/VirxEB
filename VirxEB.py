@@ -4,6 +4,7 @@ import math
 import os
 from enum import Enum
 
+import virx_erlu_rlib as rlru
 from rlbot.utils.game_state_util import CarState, GameState, Physics, Vector3
 from rlbot.utils.structures.quick_chats import QuickChats
 
@@ -44,10 +45,6 @@ class VirxEB(VirxERLU):
         if self.game_mode == "heatseeker":
             self.print("Preparing for heatseeker")
             self.goalie = True
-
-        self.cheating = self.true_name == "VirxEMB"
-        if self.cheating:
-            self.boost_amount = "unlimited"
 
         self.playstyles = Playstyle
         self.playstyle = self.playstyles.Neutral
@@ -154,50 +151,10 @@ class VirxEB(VirxERLU):
                 self.num_foes += 1
                 self.alive_foes.append(f)
 
-        if self.delta_time > 0 and self.game.round_active and self.time - self.unpause_timer > 4 and len(self.foes) > 0:
-            # adjust the profiles of each bot
-            loss = self.profiler_loss * self.delta_time
-            lens = (str(len(self.friends)), str(len(self.foes) - 1))
+        # TODO: incoperate VirxEPH here
 
-            dbz = self.ball.location.z
-            divisors = [
-                dbz <= 126.75,
-                126.75 < dbz <= 312.75,
-                312.75 < dbz <= 542.75,
-                542.75 < dbz
-            ]
-            section = divisors.index(True)
-
-            for car in self.friends:
-                if not car.demolished:
-                    car.profile[lens[0]][section] = max(car.profile[lens[0]][section] - (loss / (len(self.friends) + 1)), 0)
-
-            for car in self.foes:
-                if not car.demolished:
-                    car.profile[lens[1]][section] = max(car.profile[lens[1]][section] - (loss / len(self.foes)), 0)
-
-            gain = self.profiler_gain + loss
-
-            if self.ball.last_touch.time != self.last_ball_touch_time:
-                if self.ball.last_touch.car.index != self.index:
-                    if self.ball.last_touch.car.team == self.team:
-                        index = None
-                        for i, car in enumerate(self.friends):
-                            if car.index == self.ball.last_touch.car.index:
-                                index = i
-
-                        self.friends[index].profile[lens[0]][0 if not car.airborne else section] = min(self.friends[index].profile[lens[0]][section] + gain, 1)
-                    else:
-                        index = None
-                        for i, car in enumerate(self.foes):
-                            if car.index == self.ball.last_touch.car.index:
-                                index = i
-
-                        self.foes[index].profile[lens[1]][0 if not car.airborne else section] = min(self.foes[index].profile[lens[1]][section] + gain, 1)
-                self.last_ball_touch_time = self.ball.last_touch.time
-
-        if self.name == "VirxEB" and self.time - self.profiler_last_save > 10:
-            self.save_profiles()
+        # if self.name == "VirxEB" and self.time - self.profiler_last_save > 10:
+        #     self.save_profiles()
 
     def get_weight(self, shot=None, index=None):
         if index is not None:
@@ -215,8 +172,6 @@ class VirxEB(VirxERLU):
                     return self.max_shot_weight - math.ceil(shot_list.index(shot) / 2)
                 except ValueError:
                     continue
-
-        return 0
 
     def update_predictions(self):
         is_other_tick = self.odd_tick % 2 == 0
@@ -255,12 +210,6 @@ class VirxEB(VirxERLU):
 
             self.predictions["team_from_goal"] = sorted(tuple(self.friend_goal.location.flat_dist(teammate.location) for teammate in teammates))
             self.predictions["team_to_ball"] = sorted(tuple(self.ball.location.flat_dist(teammate.location) for teammate in teammates))
-
-        if self.cheating:
-            if is_other_tick:
-                cars = { self.index: CarState(boost_amount=100) }
-                self.set_game_state(GameState(cars=cars))
-            self.me.boost = 100
 
         if is_forth_tick:
             self.me.minimum_time_to_ball = self.time_to_ball(self.me)
@@ -315,17 +264,6 @@ class VirxEB(VirxERLU):
                             self.own_goal["location"] = Vector.from_vector(ball_slice.physics.location)
                             self.own_goal["slice"] = i
                             break
-
-                    if self.cheating and not self.shooting:
-                        tp_own_goal = None
-                        for ball_slice in self.ball_prediction_struct.slices[:30]:
-                            if ball_slice.physics.location.y * self.side >= 5200:
-                                tp_own_goal = ball_slice.physics.location
-                                break
-
-                        if tp_own_goal is not None:
-                            cars = { self.index: CarState(Physics(location=Vector3(tp_own_goal.x, tp_own_goal.y, tp_own_goal.z), velocity=Vector3(0, 0, 0))) }
-                            self.set_game_state(GameState(cars=cars))
 
                 if is_own_goal and not self.is_own_goal:
                     self.send_quick_chat(QuickChats.CHAT_EVERYONE, QuickChats.Compliments_NiceShot)
@@ -459,12 +397,12 @@ class VirxEB(VirxERLU):
         if self.goalie:
             self.playstyle = self.playstyles.Defensive
         elif self.num_friends == 0:
-            self.playstyle = self.playstyles.Neutral if self.num_foes <= 1 or self.cheating else self.playstyles.Offensive
+            self.playstyle = self.playstyles.Neutral if self.num_foes <= 1 else self.playstyles.Offensive
         elif self.num_friends == 1 or self.is_own_goal:
             if is_closest_to_ball:
                 self.playstyle = self.playstyles.Offensive
             else:
-                self.playstyle = self.playstyles.Neutral if self.num_foes <= 2 or self.cheating else self.playstyles.Defensive
+                self.playstyle = self.playstyles.Neutral if self.num_foes <= 2 else self.playstyles.Defensive
         elif self.num_friends >= 2:
             if is_closest_to_ball:
                 self.playstyle = self.playstyles.Offensive
@@ -505,7 +443,7 @@ class VirxEB(VirxERLU):
                         return
 
         anti_shot_weight = self.get_weight(self.anti_shot)
-        if current_shot_weight <= anti_shot_weight and (self.is_own_goal or is_closest_to_ball or not any_going_for_ball or not any_ready) and not (self.cheating and self.is_own_goal):
+        if current_shot_weight <= anti_shot_weight and (self.is_own_goal or is_closest_to_ball or not any_going_for_ball or not any_ready):
             if self.smart_shot(self.anti_shot, anti_shot_weight, friend_time_to_ball):
                 return
 
@@ -571,7 +509,7 @@ class VirxEB(VirxERLU):
             return
 
         if self.is_clear():
-            self.push(recovery())
+            self.push(routines.Recovery())
 
     def tmcp_ball_check(self):
         shot_name = self.get_stack_name()
@@ -691,23 +629,23 @@ class VirxEB(VirxERLU):
             return
 
         if self.kickoff_check(self.kickoff_back):
-            if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default" or self.cheating:
-                self.push(GenericKickoff())
+            if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default":
+                self.push(routines.GenericKickoff())
             else:
                 self.push(BackKickoff())
         elif self.kickoff_check(self.kickoff_left):
-            if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default" or self.cheating:
-                self.push(GenericKickoff())
+            if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default":
+                self.push(routines.GenericKickoff())
             else:
                 self.push(CornerKickoff(-1))
         elif self.kickoff_check(self.kickoff_right):
-            if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default" or self.cheating:
-                self.push(GenericKickoff())
+            if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default":
+                self.push(routines.GenericKickoff())
             else:
                 self.push(CornerKickoff(1))
         elif self.kickoff_check(self.kickoff_back_left) or self.kickoff_check(self.kickoff_back_right):
-            if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default" or self.cheating:
-                self.push(GenericKickoff())
+            if not almost_equals(-self.gravity.z, 650, 50) or self.boost_amount != "default":
+                self.push(routines.GenericKickoff())
             else:
                 self.push(BackOffsetKickoff())
         else:
@@ -725,14 +663,14 @@ class VirxEB(VirxERLU):
 
     def backcheck(self, clear_on_valid=False):
         if self.is_clear() or clear_on_valid:
-            routine_shadow = shadow()
+            routine_shadow = routines.Shadow()
             if routine_shadow.is_viable(self):
                 if clear_on_valid: self.clear()
 
                 self.push(routine_shadow)
                 return True
 
-            routine_retreat = retreat()
+            routine_retreat = routines.Retreat()
             if routine_retreat.is_viable(self):
                 if clear_on_valid: self.clear()
 
@@ -753,8 +691,8 @@ class VirxEB(VirxERLU):
         ignore_foe = min_foe is None or min_foe.minimum_time_to_ball == 7
         min_seconds = math.inf
 
-        enemy_post = retreat().get_target(self)
-        shadow_routine = shadow()
+        enemy_post = routines.Retreat().get_target(self)
+        shadow_routine = routines.Shadow()
         friend_post = shadow_routine.get_target(self) if shadow_routine.is_viable(self) else enemy_post
 
         if self.is_own_goal:
@@ -802,7 +740,7 @@ class VirxEB(VirxERLU):
 
             if len(viable_boosts) > 0:
                 if clear_on_valid: self.clear()
-                self.push(goto_boost(min(viable_boosts, key=lambda boost: boost["time"])["pad"]))
+                self.push(routines.GoToBoost(min(viable_boosts, key=lambda boost: boost["time"])["pad"]))
 
 
 if __name__ == "__main__":
