@@ -183,8 +183,7 @@ class VirxERLU(StandaloneBot):
         self.tick_times: list[float] = []
         self.refresh_player_list_timer = 0
 
-        self.future_ball_location_slice = 180
-        self.ball_prediction_struct = None
+        self.future_ball_location_slice = 360
 
     def retire(self):
         # Stop the currently running threads
@@ -347,8 +346,6 @@ class VirxERLU(StandaloneBot):
 
         if self.odd_tick > 3:
             self.odd_tick = 0
-
-        self.ball_prediction_struct = self.get_ball_prediction_struct()
 
         if self.matchcomms_root is not None:
             while 1:

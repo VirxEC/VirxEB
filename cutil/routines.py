@@ -1,6 +1,7 @@
 from typing import Optional
 
 import numpy as np
+import virx_erlu_rlib as rlru
 from numba import njit
 from util import routines, utils
 from util.agent import Vector, VirxERLU
@@ -105,8 +106,8 @@ class FaceTarget(BaseRoutine):
 
     @staticmethod
     def get_ball_target(agent: VirxERLU) -> Vector:
-        ball = agent.ball.location if agent.me.minimum_time_to_ball == 7 else agent.ball_prediction_struct.slices[agent.min_intercept_slice].physics.location
-        return Vector(ball.x, ball.y)
+        ball = agent.ball.location if agent.me.minimum_time_to_ball == 7 else Vector(*rlru.get_slice_index(agent.min_intercept_slice).location)
+        return ball.flatten()
 
     def run(self, agent: VirxERLU):
         if not agent.me.airborne and agent.time - agent.me.land_time < 0.5:
