@@ -10,7 +10,7 @@ from cutil.eph import PacketHeuristics
 from cutil.routines import *
 from cutil.tools import find_any_shot, find_shot
 from cutil.utils import *
-from util.agent import Vector, VirxERLU, run_bot
+from util.agent import GameTickPacket, Vector, VirxERLU, run_bot
 from util.utils import *
 
 
@@ -59,9 +59,6 @@ class VirxEB(VirxERLU):
         self.closest_foes = []
         self.friend_times = []
 
-        self.profiler_threshold = 0.8
-        self.profiler_loss = 0.005
-        self.profiler_gain = 0.21
         self.profiler_last_save = 0
         self.last_ball_touch_time = -1
         self.unpause_timer = -1
@@ -104,6 +101,11 @@ class VirxEB(VirxERLU):
 
         if self.name in {"VirxEB", "VirxEMB"}:
             print(f"{self.name}: Check me out at https://www.virxcase.dev!!!")
+
+    def refresh_player_lists(self, packet: GameTickPacket):
+        # Useful to keep separate from get_ready because humans can join/leave a match
+        self.all = tuple(Car(i, packet) for i in range(packet.num_cars))
+        self.update_cars_from_all()
 
     def preprocess(self, packet):
         super().preprocess(packet)
@@ -217,7 +219,7 @@ class VirxEB(VirxERLU):
 
             for i in range(0, rlru.get_num_ball_slices(), 24):
                 ball_slice = rlru.get_slice_index(i)
-                location = ball_slice.physics.location.y * self.side
+                location = ball_slice.location[1] * self.side
 
                 if location >= 5212.75:
                     is_own_goal = True
@@ -231,8 +233,9 @@ class VirxEB(VirxERLU):
 
             if is_own_goal:
                 for i in range(0, rlru.get_num_ball_slices(), 30):
-                    if ball_slice.physics.location.y * self.side >= 5200:
-                        self.own_goal["location"] = Vector.from_vector(ball_slice.physics.location)
+                    ball_slice = rlru.get_slice_index(i)
+                    if ball_slice.location[1] * self.side >= 5200:
+                        self.own_goal["location"] = Vector(*ball_slice.location)
                         self.own_goal["slice"] = i
                         break
 
@@ -272,7 +275,7 @@ class VirxEB(VirxERLU):
         # Enemy intercept prediction testing
         """
         if self.enemy_time_to_ball != 7:
-            intercept_location = Vector(*rlru.get_slice_index(self.future_ball_location_slice).physics.location)
+            intercept_location = Vector(*rlru.get_slice_index(self.future_ball_location_slice).location)
             self.sphere(intercept_location, self.ball_radius, self.renderer.black())
         """
         # Backcheck testing
@@ -312,7 +315,7 @@ class VirxEB(VirxERLU):
         if car.demolished:
             return 7
 
-        profile = [profile > self.profiler_threshold for profile in car.profile[str(len(self.friends)) if car.team == self.team else str(len(self.foes) - 1)]]
+        profile = self.packet_heuristics.predict_car(self.packet_heuristics.get_car(car.name))
 
         start_slice = max(12, min(round(car.minimum_time_to_ball * 120), rlru.get_num_ball_slices() - 1) - 120) if car.minimum_time_to_ball != 7 else 12
         end_slice = max(12, min(round(5.5 * 120), rlru.get_num_ball_slices() - 1))
@@ -321,7 +324,7 @@ class VirxEB(VirxERLU):
         options = rlru.TargetOptions(start_slice, end_slice)
         target_id = rlru.new_any_target(car.index, options)
         
-        shot = rlru.get_shot_with_target(target_id, True, profile[0], profile[1], profile[2], profile[3], only=True)
+        shot = rlru.get_shot_with_target(target_id, True, profile["may_ground_shot"], profile["may_jump_shot"], profile["may_double_jump_shot"], profile["may_aerial"], only=True)
 
         if shot.found:
             return shot.time - self.time
@@ -489,11 +492,7 @@ class VirxEB(VirxERLU):
                             break
 
     def can_any_foe_aerial(self):
-        len_fs = str(len(self.foes) - 1)
-        for car in self.foes:
-            if car.profile[len_fs][3] > self.profiler_threshold:
-                return True
-        return False
+        return any(self.packet_heuristics.predict_car(self.packet_heuristics.get_car(car.name))["may_aerial"] for car in self.foes)
 
     def get_shot(self, target=None, weight=None, cap=None):
         if self.me.minimum_time_to_ball == 7:

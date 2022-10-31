@@ -603,6 +603,7 @@ class ShortShot(BaseRoutine):
     """
     def __init__(self,target: Vector):
         self.target = target
+        self.weight = -1
 
     def run(self, agent: VirxERLU):
         car_to_ball, distance = (agent.ball.location - agent.me.location).normalize(True)

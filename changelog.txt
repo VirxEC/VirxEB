@@ -1,2 +1,3 @@
 Seperate VirxEB from VirxERLU better with cutil folder
 Update to use VirxERLU 2.0, with Rust
+Add new packet heuristics to profile bot behavior that uses VirxERLU-RLib

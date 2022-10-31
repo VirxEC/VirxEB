@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Iterator, List
 
 import numpy as np
-from rlbot.utils.structures.ball_prediction_struct import BallPrediction
+import virx_erlu_rlib as rlru
 from rlbot.utils.structures.game_data_struct import (GameTickPacket,
                                                      PlayerInfo, Touch,
                                                      Vector3)
@@ -44,6 +44,22 @@ class CarHeuristic(list):
 
     def __setitem__(self, index, value):
         self.profile[index] = value
+    
+    @property
+    def may_ground_shot(self):
+        return self.profile[0]
+    
+    @property
+    def may_jump_shot(self):
+        return self.profile[1]
+    
+    @property
+    def may_jump_shot(self):
+        return self.profile[2]
+    
+    @property
+    def may_aerial(self):
+        return self.profile[3]
 
 
 class PacketHeuristics:
@@ -128,7 +144,7 @@ class PacketHeuristics:
             with open(profile_path, "w") as f:
                 json.dump(profile, f)
 
-    def add_tick(self, packet: GameTickPacket, ball_prediction_struct: BallPrediction) -> bool:
+    def add_tick(self, packet: GameTickPacket):
         time = packet.game_info.seconds_elapsed
         delta_time = time - self.time
         self.time = time
@@ -160,14 +176,17 @@ class PacketHeuristics:
             ball_zone_id: set((get_hashable_from_vector3(packet.game_ball.physics.location),))
         }
 
-        for slice_ in ball_prediction_struct.slices[::15]:
-            ball_location = slice_.physics.location
-            future_ball_zone_id = self.get_zone_id(ball_location)
+        for i in range(0, rlru.get_num_ball_slices()):
+            slice_ = rlru.get_slice_index(i)
+            future_ball_zone_id = self.get_zone_id(Vector3(*slice_.location))
+
+            if future_ball_zone_id is None:
+                continue
 
             if future_ball_zone_id not in future_ball_zones:
                 future_ball_zones[future_ball_zone_id] = set()
 
-            future_ball_zones[future_ball_zone_id].add(get_hashable_from_vector3(ball_location))
+            future_ball_zones[future_ball_zone_id].add(slice_.location)
 
         for i in range(packet.num_cars):
             if i in self.ignore_indexes:
