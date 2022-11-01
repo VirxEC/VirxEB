@@ -132,6 +132,10 @@ class VirxEB(VirxERLU):
             self.packet_heuristics.save_profiles()
             self.profiler_last_save = self.time
 
+            if len(self.tick_times) != 0:
+                avg_mspt = round(sum(self.tick_times) / len(self.tick_times), 3)
+                self.print(f"Avg. ms/t: {avg_mspt}")
+
     def get_weight(self, shot=None, index=None):
         if index is not None:
             return self.max_shot_weight - math.ceil(index / 2)
@@ -372,7 +376,7 @@ class VirxEB(VirxERLU):
                 self.playstyle = self.playstyles.Defensive if self.me.minimum_time_to_ball > self.friend_times[-1].minimum_time_to_ball else self.playstyles.Neutral
 
         self.dbg_3d(self.playstyle.name)
-        any_ready = any((f.tmcp_action is not None and f.tmcp_action['type'] == "READY" and (0 < f.tmcp_action['time'] - self.time < 4) for f in self.friends))
+        any_ready = any((f.tmcp_action is not None and f.tmcp_action['type'] in "READY" and (0 < f.tmcp_action['time'] - self.time < 4) for f in self.friends))
 
         if not self.is_own_goal and self.shooting and self.num_friends > 0:
             self.tmcp_ball_check()
@@ -388,7 +392,7 @@ class VirxEB(VirxERLU):
         if not self.is_clear() and self.odd_tick != 0:
             return
 
-        current_shot_weight = self.stack[0].weight if self.shooting else -1
+        current_shot_weight = self.stack[0].weight if self.shooting and self.stack[0].weight is not None else -1
 
         if not self.is_own_goal:
             if self.smart_shot(self.best_shot, self.max_shot_weight, 4):
@@ -472,10 +476,10 @@ class VirxEB(VirxERLU):
 
     def tmcp_ball_check(self):
         shot_name = self.get_stack_name()
-        shot_time = self.stack[0].intercept_time if shot_name != "short_shot" else 7
+        shot_time = self.stack[0].intercept_time if shot_name not in {'ShortShot', 'short_shot'} else 7
 
         if shot_time > 1 and (shot_name != "AerialShot" or shot_time > 3):
-            is_short_shot = shot_name == "short_shot"
+            is_short_shot = shot_name in {'ShortShot', 'short_shot'}
             for friend in self.friends:
                 action = friend.tmcp_action
                 if action is not None and action['type'] == "BALL" and action['time'] != -1:

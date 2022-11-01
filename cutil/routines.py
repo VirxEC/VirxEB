@@ -32,6 +32,12 @@ class AerialShot(routines.AerialShot):
         self.weight = weight
 
 
+class ShortShot(routines.ShortShot):
+    def __init__(self, target: Vector):
+        super().__init__(target)
+        self.weight = -1
+
+
 class WaveDash(BaseRoutine):
     def __init__(self, target=None):
         self.step = -1
@@ -242,7 +248,7 @@ class Shadow(BaseRoutine):
             except ZeroDivisionError:
                 target.x = 0
         else:
-            target.x = (abs(ball_loc.x) + 640) * utils.sign(ball_loc.x)
+            target.x = (abs(ball_loc.x) + 640) * utils._fsign(ball_loc.x)
 
         return Vector(target.x, target.y)
 
@@ -403,9 +409,9 @@ class CornerKickoff(BaseRoutine):
                 agent.controller.steer = self.direction
             elif self.flip_done is None:
                 if self.flip is None:
-                    self.flip = routines.Flip(Vector(64, -36 * utils.sign(agent.me.location.x * utils.side(agent.team))))
+                    self.flip = routines.Flip(Vector(64, -36 * utils._fsign(agent.me.location.x * utils.side(agent.team))), agent.ball.location.flatten())
 
-                self.flip_done = self.flip.run(agent, manual=True, recovery_target=agent.ball.location.flatten())
+                self.flip_done = self.flip.run(agent, manual=True)
                 if abs(Vector(x=1).angle2D(agent.me.local_location(agent.ball.location))) < 0.05:
                     agent.controller.boost = agent.me.local_velocity().x < 2250
             elif self.wait == -1 or agent.time - self.wait < 0.05:
@@ -506,9 +512,9 @@ class BackOffsetKickoff:
                     return
 
                 self.boost_pad = min(self.boost_pad, key=lambda boost: boost.location.flat_dist(agent.me.location))
-                self.flip = routines.Flip(Vector(27, 73 * utils.sign(agent.me.location.x * utils.side(agent.team))))
+                self.flip = routines.Flip(Vector(27, 73 * utils._fsign(agent.me.location.x * utils.side(agent.team))), agent.ball.location.flatten())
 
-            self.flip_done = self.flip.run(agent, manual=True, recovery_target=agent.ball.location)
+            self.flip_done = self.flip.run(agent, manual=True)
         elif self.flip_predrive is None or agent.time - self.flip_predrive <= 0.19:
             if self.flip_predrive is None:
                 self.flip_predrive = agent.time
@@ -594,43 +600,3 @@ class BoostDown(BaseRoutine):
             agent.pop()
         elif abs(Vector(x=1).angle(target)) < 0.5:
             agent.controller.boost = True
-
-
-class ShortShot(BaseRoutine):
-    """
-    This routine drives towards the ball and attempts to hit it towards a given target
-    It does not require ball prediction and kinda guesses at where the ball will be on its own
-    """
-    def __init__(self,target: Vector):
-        self.target = target
-        self.weight = -1
-
-    def run(self, agent: VirxERLU):
-        car_to_ball, distance = (agent.ball.location - agent.me.location).normalize(True)
-        ball_to_target = (self.target - agent.ball.location).normalize()
-
-        relative_velocity = car_to_ball.dot(agent.me.velocity - agent.ball.velocity)
-        if relative_velocity != 0.0:
-            eta = utils._fcap(distance / utils._fcap(relative_velocity, 400., 2300.), 0., 1.5)
-        else:
-            eta = 1.5
-
-        #If we are approaching the ball from the wrong side the car will try to only hit the very edge of the ball
-        left_vector = car_to_ball.cross((0, 0, 1))
-        right_vector = car_to_ball.cross((0, 0, -1))
-        target_vector = -ball_to_target.clamp(left_vector, right_vector)
-        final_target = agent.ball.location + (target_vector * (distance / 2))
-
-        #Some adjustment to the final target to ensure we don't try to dirve through any goalposts to reach it
-        if abs(agent.me.location[1]) > 5150: final_target[0] = utils._fcap(final_target.x, -750., 750.)
-        
-        agent.line(final_target - Vector(0,0,100), final_target + Vector(0, 0, 100), [255,255,255])
-
-        local_target = agent.me.local_location(final_target)
-        target_angles = utils.defaultPD(agent, local_target)
-        target_speed = 2300 if distance > 1600 else 2300 - utils._fcap(1600 * abs(target_angles[1]), 0., 2050.)
-        utils.defaultThrottle(agent, target_speed, target_angles, local_target)
-
-        if abs(target_angles[1]) < 0.05 and (eta < 0.45 or distance < 150):
-            agent.pop()
-            agent.push(routines.Flip(agent.me.local(car_to_ball)))

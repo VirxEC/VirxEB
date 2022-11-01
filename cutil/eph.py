@@ -176,7 +176,7 @@ class PacketHeuristics:
             ball_zone_id: set((get_hashable_from_vector3(packet.game_ball.physics.location),))
         }
 
-        for i in range(0, rlru.get_num_ball_slices()):
+        for i in range(0, rlru.get_num_ball_slices(), 30):
             slice_ = rlru.get_slice_index(i)
             future_ball_zone_id = self.get_zone_id(Vector3(*slice_.location))
 

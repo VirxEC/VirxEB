@@ -111,7 +111,7 @@ def get_slices(agent: VirxERLU, cap_: int, weight: Optional[int]=None, start_sli
     end_slices = None
 
     # If we're shooting, crop the struct
-    if agent.shooting and agent.stack[0].__class__.__name__ != "short_shot":
+    if agent.shooting and agent.stack[0].__class__.__name__ not in {'ShortShot', 'short_shot'}:
         shot_weight = agent.stack[0].weight
         if shot_weight != -1:
             # Get the time remaining
