@@ -17,7 +17,7 @@ class Gui(Thread):
 
         root.title("VirxEC/VirxERLU")
 
-        root.geometry("255x425")
+        root.geometry("255x445")
 
         title = ttk.Label(root, text=f"{self.agent.name} hosted by VirxERLU")
         title.pack()
@@ -112,6 +112,17 @@ class Gui(Thread):
 
         debug_2d = ttk.Checkbutton(root, text='Debug 2D', variable=debug_2d_bool, command=set_debug_2d)
         debug_2d.pack()
+
+        # Profiles
+
+        profiles_bool = BooleanVar()
+        profiles_bool.set(self.agent.debug_profiles)
+
+        def set_profiles():
+            self.agent.debug_profiles = profiles_bool.get()
+
+        profiles_btn = ttk.Checkbutton(root, text='Profiles (2D)', variable=profiles_bool, command=set_profiles)
+        profiles_btn.pack()
 
         # Location
 

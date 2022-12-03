@@ -126,9 +126,8 @@ def defaultDrive(agent: VirxERLU, target_speed, local_target):
     return target_angles, velocity
 
 
-def get_max_speed_from_local_point(point):
-    turn_rad = max(abs(point.x), abs(point.y))
-    return curvature_to_velocity(1 / turn_rad)
+def get_speed_from_local_point(point):
+    return curvature_to_velocity(1 / max(abs(point.x), abs(point.y))) - 100
 
 
 def curvature_to_velocity(curve):
@@ -177,7 +176,7 @@ def is_inside_turn_radius(turn_rad, local_target, steer_direction):
 
 def turn_radius(v):
     # v is the magnitude of the velocity in the car's forward direction
-    return 1.0 / curvature(v)
+    return 1.0 / curvature(min(abs(v), 2300))
 
 
 def curvature(v):
@@ -192,12 +191,32 @@ def curvature(v):
         return 0.0043 - 1.95e-6 * v
 
     if 1500 <= v < 1750:
-        return 0.003025 - 1.1e-7 * v
+        return 0.003025 - 1.1e-6 * v
 
     if 1750 <= v < 2500:
-        return 0.0018 - 0.4e-7 * v
+        return 0.0018 - 4e-7 * v
 
     return 0
+
+
+def max_turning_speed(curve):
+    values = [
+        [0.00088, 2300],
+        [0.0011, 1750],
+        [0.00138, 1500],
+        [0.00235, 1000],
+        [0.00398, 500],
+        [0.0069, 0],
+    ]
+
+    inp = cap(abs(curve), values[0][0], values[5][0])
+
+    for i in range(5):
+        if values[i][0] <= inp and inp <= values[i + 1][0]:
+            u = (inp - values[i][0]) / (values[i + 1][0] - values[i][0])
+            return cap(lerp(values[i][1], values[i + 1][1], u), 0, 2300)
+
+    return -1
 
 
 def in_field(point, radius):
@@ -423,7 +442,7 @@ def find_landing_plane(l: Vector, v: Vector, g: float):
 
 def get_cap(agent: VirxERLU, cap_, get_aerial_cap=False, is_anti_shot=False):
     if agent.num_friends == 0 or not (agent.me.minimum_time_to_ball > agent.friend_times[0].minimum_time_to_ball and is_anti_shot):
-        foes = len(tuple(foe for foe in agent.foes if not foe.demolished and foe.location.y * side(agent.team) < agent.ball.location.y * side(agent.team) - 150))
+        foes = len(tuple(foe for foe in agent.foes if not foe.demolished and foe.location.y * agent.friend_team_side < agent.ball.location.y * agent.friend_team_side - 150))
         if foes != 0 and agent.enemy_time_to_ball != 7:
             future_ball_location_slice = min(round(agent.enemy_time_to_ball * 1.15 * 60), agent.ball_prediction_struct.num_slices - 1)
             foe_factor = max(abs(agent.closest_foes[0].local_velocity().angle2D(agent.closest_foes[0].local_location(agent.ball.location))) * 4, 4)
@@ -449,6 +468,13 @@ def get_cap(agent: VirxERLU, cap_, get_aerial_cap=False, is_anti_shot=False):
     return cap_, aerial_cap
 
 
+def friend_near_target(agent: VirxERLU, target, distance):
+    for car in agent.friends:
+        if car.location.flatten().dist(target) < 400:
+            return True
+    return False
+
+
 def valid_ceiling_shot(agent: VirxERLU, cap_=5):
     struct = agent.ball_prediction_struct
 
@@ -458,7 +484,7 @@ def valid_ceiling_shot(agent: VirxERLU, cap_=5):
     end_slice = math.ceil(cap_ * 60)
     slices = struct.slices[30:end_slice:2]
 
-    if agent.me.location.x * side(agent.team) > 0:
+    if agent.me.location.x * agent.friend_team_side > 0:
         quadrilateral = (
             round(agent.foe_goal.right_post.flatten()),
             round(agent.foe_goal.left_post.flatten())
@@ -471,7 +497,7 @@ def valid_ceiling_shot(agent: VirxERLU, cap_=5):
 
     quadrilateral += (
         Vector(0, 640),
-        Vector(round(agent.me.location.x - (200 * sign(agent.me.location.x))), round(agent.me.location.y - (200 * side(agent.team)))),
+        Vector(round(agent.me.location.x - (200 * sign(agent.me.location.x))), round(agent.me.location.y - (200 * agent.friend_team_side))),
     )
 
     agent.polyline(quadrilateral + (quadrilateral[0],), agent.renderer.team_color(alt_color=True))

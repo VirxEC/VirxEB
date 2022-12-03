@@ -28,6 +28,15 @@ EXTRA_DEBUGGING = True
 if not TOURNAMENT_MODE and EXTRA_DEBUGGING:
     from gui import Gui
 
+HANDLE_PLAYER_EVENTS = False
+
+if HANDLE_PLAYER_EVENTS:
+    from threading import Thread
+    from rlbot.socket.socket_manager import SocketRelay
+    from rlbot.messages.flat.PlayerInputChange import PlayerInputChange
+    from rlbot.messages.flat.PlayerSpectate import PlayerSpectate
+    from rlbot.messages.flat.PlayerStatEvent import PlayerStatEvent
+
 
 class VirxERLU(StandaloneBot):
     # Massive thanks to ddthj/GoslingAgent (GitHub repo) for the basis of VirxERLU
@@ -37,7 +46,10 @@ class VirxERLU(StandaloneBot):
         super().__init__(name, team, index)
         self.tournament = TOURNAMENT_MODE
         self.extra_debugging = EXTRA_DEBUGGING
+        self.handle_player_events = HANDLE_PLAYER_EVENTS
         self.true_name = re.split(r' \(\d+\)$', self.name)[0]
+        self.friend_team_side = (-1, 1)[team]  # -1 for blue team and 1 for orange team
+        self.foe_team_side = -self.friend_team_side
 
         self.debug = [[], []]
         self.debugging = not self.tournament
@@ -62,7 +74,7 @@ class VirxERLU(StandaloneBot):
             os.mkdir(error_folder)
 
         self.traceback_file = (
-            os.path.join(error_folder),
+            error_folder,
             f"-traceback ({T}).txt"
         )
 
@@ -72,6 +84,16 @@ class VirxERLU(StandaloneBot):
             self.gui = Gui(self)
             self.print("Starting the GUI...")
             self.gui.start()
+
+        if self.handle_player_events:
+            self.socket_relay = SocketRelay()
+            self.socket_relay.player_input_change_handlers.append(self.handle_input_change)
+            self.socket_relay.player_spectate_handler.append(self.handle_player_spectate)
+            self.socket_relay.player_stat_handlers.append(self.handle_player_stat)
+
+            self.print("Starting the player event handler...")
+            self.non_blocking_socket_relay = Thread(target=self.socket_relay.connect_and_run, args=(False, True, False))
+            self.non_blocking_socket_relay.start()
 
         self.print("Building game information")
 
@@ -119,12 +141,11 @@ class VirxERLU(StandaloneBot):
 
         if self.game_mode == "heatseeker":
             self.print("Preparing for heatseeker")
-            self.goalie = True
+            self.ground = True
 
         self.friends = ()
         self.foes = ()
         self.me = car_object(self.index)
-        self.ball_to_goal = -1
 
         self.ball = ball_object()
         self.game = game_object()
@@ -147,15 +168,20 @@ class VirxERLU(StandaloneBot):
         self.odd_tick = -1
         self.delta_time = 1 / 120
         self.last_sent_tmcp_packet = None
-        # self.sent_tmcp_packet_times = {}
+        self.sent_tmcp_packet_times = {}
 
         self.future_ball_location_slice = 180
         self.ball_prediction_struct = None
+        self.tick_times = []
 
     def retire(self):
         # Stop the currently running threads
         if not self.tournament and self.extra_debugging:
             self.gui.stop()
+
+        if self.handle_player_events:
+            self.socket_relay.disconnect()
+            self.non_blocking_socket_relay.join()
 
     def is_hot_reload_enabled(self):
         # The tkinter GUI isn't compatible with hot reloading
@@ -181,17 +207,37 @@ class VirxERLU(StandaloneBot):
         self.ready = True
 
     def refresh_player_lists(self, packet: GameTickPacket):
-        match_settings = self.get_match_settings()
         # Useful to keep separate from get_ready because humans can join/leave a match
-        self.friends = tuple(car_object(i, packet, match_settings) for i in range(packet.num_cars) if packet.game_cars[i].team is self.team and i != self.index)
-        self.foes = tuple(car_object(i, packet, match_settings) for i in range(packet.num_cars) if packet.game_cars[i].team != self.team)
-        self.me = car_object(self.index, packet, match_settings)
+        self.friends = tuple(car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team is self.team and i != self.index)
+        self.foes = tuple(car_object(i, packet) for i in range(packet.num_cars) if packet.game_cars[i].team != self.team)
+        self.me = car_object(self.index, packet)
+        self.true_name = self.me.true_name
+        self.friend_team_side = self.me.team_side
+        self.foe_team_side = -self.me.team_side
 
-        try:
-            true_name = match_settings.PlayerConfigurations(self.index).Name()
-            self.true_name = true_name
-        except Exception:
-            print(f"{self.name}: I appear to have been forcefully pushed into a match! How rude.")
+    def refresh_player_teams(self, packet: GameTickPacket):
+        old_players = sorted(itertools.chain(self.friends, self.foes, [self.me]), key=lambda car: car.index)
+        self.friends = []
+        self.foes = []
+
+        for i in range(packet.num_cars):
+            car_team = packet.game_cars[i].team
+            if i == self.index:
+                self.me.team = self.team = car_team
+                self.me.team_side = self.friend_team_side = (-1, 1)[car_team]
+                self.foe_team_side = -self.friend_team_side
+                continue
+
+            player = old_players[i]
+            player.team = car_team
+            player.team_side = (-1, 1)[car_team]
+
+            if car_team is self.team:
+                self.friends.append(player)
+                continue
+
+            self.foes.append(player)
+
 
     def push(self, routine):
         self.stack.append(routine)
@@ -248,8 +294,18 @@ class VirxERLU(StandaloneBot):
         return len(self.stack) < 1
 
     def preprocess(self, packet: GameTickPacket):
-        if packet.num_cars != len(self.friends)+len(self.foes)+1 or self.odd_tick == 0:
+        self.odd_tick += 1
+
+        if self.odd_tick > 3:
+            self.odd_tick = 0
+
+        if packet.num_cars != len(self.friends)+len(self.foes)+1:
             self.refresh_player_lists(packet)
+
+        if self.odd_tick == 0:
+            # this is required when playing with humans in a LAN match
+            # Rocket League does weird stuff with not setting proper teams
+            self.refresh_player_teams(packet)
 
         set(map(lambda car: car.update(packet), self.friends))
         set(map(lambda car: car.update(packet), self.foes))
@@ -275,13 +331,6 @@ class VirxERLU(StandaloneBot):
         # Tells us when to go for kickoff
         self.kickoff_flag = self.game.round_active and self.game.kickoff
 
-        self.ball_to_goal = self.friend_goal.location.flat_dist(self.ball.location)
-
-        self.odd_tick += 1
-
-        if self.odd_tick > 3:
-            self.odd_tick = 0
-
         self.ball_prediction_struct = self.get_ball_prediction_struct()
 
         if self.matchcomms_root is not None:
@@ -306,6 +355,7 @@ class VirxERLU(StandaloneBot):
 
     def get_output(self, packet: GameTickPacket) -> SimpleControllerState:
         try:
+            start = time_ns()
             # Reset controller
             self.controller.__init__(use_item=True)
 
@@ -316,8 +366,12 @@ class VirxERLU(StandaloneBot):
             self.preprocess(packet)
 
             if self.me.demolished:
-                if not self.is_clear():
-                    self.clear()
+                try:
+                    self.demolished()
+                except Exception:
+                    t_file = os.path.join(self.traceback_file[0], self.name+self.traceback_file[1])
+                    print(f"ERROR in {self.name}; see '{t_file}'")
+                    print_exc(file=open(t_file, "a"))
             elif self.game.round_active:
                 self.shooting = self.is_shooting()
 
@@ -336,6 +390,16 @@ class VirxERLU(StandaloneBot):
                     if self.last_sent_tmcp_packet is None or self.tmcp_packet_is_different(tmcp_packet):
                         self.matchcomms.outgoing_broadcast.put_nowait(tmcp_packet)
                         self.last_sent_tmcp_packet = tmcp_packet
+
+                        if self.debug_profiles:
+                            t = math.floor(self.time)
+                            if self.sent_tmcp_packet_times.get(t) is None:
+                                self.sent_tmcp_packet_times[t] = 1
+                            else:
+                                self.sent_tmcp_packet_times[t] += 1
+
+                            while len(self.sent_tmcp_packet_times) > 10:
+                                del self.sent_tmcp_packet_times[min(self.sent_tmcp_packet_times.keys())]
                 except Exception:
                     t_file = os.path.join(self.traceback_file[0], self.name+"-TMCP"+self.traceback_file[1])
                     print(f"ERROR in {self.name} with sending TMCP packet; see '{t_file}'")
@@ -350,12 +414,17 @@ class VirxERLU(StandaloneBot):
                         t_file = os.path.join(self.traceback_file[0], r_name+self.traceback_file[1])
                         print(f"ERROR in {self.name}'s {r_name} routine; see '{t_file}'")
                         print_exc(file=open(t_file, "a"))
+                end = time_ns()
+                self.tick_times.append(round((end - start) / 1_000_000, 3))
+                while len(self.tick_times) > 120:
+                    del self.tick_times[0]
 
                 # This is a ton of debugging stuff
                 if self.debugging:
                     if self.debug_3d_bool:
                         if self.debug_stack_bool:
-                            self.debug[0] = itertools.chain(self.debug[0], ("STACK:",), (item.__class__.__name__ for item in reversed(self.stack)))
+                            self.debug[0] = list(itertools.chain(self.debug[0], ("STACK:",), (item.__class__.__name__ for item in reversed(self.stack))))
+                        self.debug[0].insert(0, f"Average ms/t: {round(sum(self.tick_times) / len(self.tick_times), 3)}")
 
                         self.renderer.draw_string_3d(tuple(self.me.location), 2, 2, "\n".join(self.debug[0]), self.renderer.team_color(alt_color=True))
 
@@ -365,8 +434,8 @@ class VirxERLU(StandaloneBot):
                         self.debug[1].insert(0, f"Hitbox: {round(car.hitbox)}")
                         self.debug[1].insert(0, f"Location: {round(car.location)}")
 
-                        center = car.location
                         top = car.up * (car.hitbox.height / 2)
+                        center = car.location + top
                         front = car.forward * (car.hitbox.length / 2)
                         right = car.right * (car.hitbox.width / 2)
 
@@ -387,18 +456,19 @@ class VirxERLU(StandaloneBot):
                         self.line(top_back_right, top_front_right, hitbox_color)
 
                     if self.debug_2d_bool:
-                        # if len(self.sent_tmcp_packet_times) > 0:
-                        #     avg_tmcp_packets = sum(self.sent_tmcp_packet_times.values()) / len(self.sent_tmcp_packet_times)
+                        if len(self.sent_tmcp_packet_times) > 0:
+                            avg_tmcp_packets = round(sum(self.sent_tmcp_packet_times.values()) / len(self.sent_tmcp_packet_times), 2)
 
-                        #     self.debug[1].insert(0, f"Avg. TMCP packets / sec: {avg_tmcp_packets}")
+                            self.debug[1].insert(0, f"Avg. TMCP packets / sec: {avg_tmcp_packets}")
 
-                        for car in self.foes:
-                            profile = [round(car.profile[str(len(self.foes) - 1)][i], 3) for i in range(4)]
-                            self.debug[1].insert(0, f"{car.name} profile: {profile}")
+                        if self.debug_profiles:
+                            for car in self.foes:
+                                profile = [round(car.profile[str(len(self.foes) - 1)][i], 3) for i in range(4)]
+                                self.debug[1].insert(0, f"{car.name} profile: {profile}")
 
-                        for car in self.friends:
-                            profile = [round(car.profile[str(len(self.friends))][i], 3) for i in range(4)]
-                            self.debug[1].insert(0, f"{car.name} profile: {profile}")
+                            for car in self.friends:
+                                profile = [round(car.profile[str(len(self.friends))][i], 3) for i in range(4)]
+                                self.debug[1].insert(0, f"{car.name} profile: {profile}")
 
                         if self.delta_time != 0:
                             self.debug[1].insert(0, f"TPS: {round(1 / self.delta_time)}")
@@ -508,11 +578,24 @@ class VirxERLU(StandaloneBot):
             if friend.index == packet.get('index'):
                 friend.tmcp_action = packet.get('action')
 
+    def handle_input_change(self, input_change: PlayerInputChange, seconds: float, frame_num: int):
+        pass
+
+    def handle_player_spectate(self, player_spectate: PlayerSpectate, seconds: float, frame_num: int):
+        pass
+
+    def handle_player_stat(self, player_stat: PlayerStatEvent, seconds: float, frame_num: int):
+        pass
+
     def handle_match_comm(self, msg):
         pass
 
     def run(self):
         pass
+    
+    def demolished(self):
+        if not self.is_clear():
+            self.clear()
 
     def handle_quick_chat(self, index, team, quick_chat):
         pass
@@ -527,7 +610,7 @@ CHARS = list(string.ascii_letters) + list(string.digits) + list(string.punctuati
 class car_object:
     # objects convert the gametickpacket in something a little friendlier to use
     # and are automatically updated by VirxERLU as the game runs
-    def __init__(self, index, packet: GameTickPacket=None, match_settings: MatchSettings=None, profile=True):
+    def __init__(self, index, packet: GameTickPacket=None, profile=True):
         self.location = Vector()
         self.orientation = Matrix3()
         self.velocity = Vector()
@@ -541,23 +624,18 @@ class car_object:
         self.boost = 0
         self.index = index
         self.tmcp_action = None
-        self.true_name = None
+        self.true_name = ""
         self.land_time = 0
 
         self.minimum_time_to_ball = 7
-
-        if match_settings is not None:
-            try:
-                self.true_name = match_settings.PlayerConfigurations(index).Name()
-            except Exception:
-                pass
 
         if packet is not None:
             car = packet.game_cars[self.index]
 
             self.name = car.name
-            if self.true_name is None: self.true_name = re.split(r' \(\d+\)$', self.name)[0]  # e.x. 'ABot (12)' will instead be just 'ABot'
+            self.true_name = re.split(r' \(\d+\)$', self.name)[0]  # e.x. 'ABot (12)' will instead be just 'ABot'
             self.team = car.team
+            self.team_side = (-1, 1)[car.team]  # -1 for blue team and 1 for orange team
             self.hitbox = hitbox_object(car.hitbox.length, car.hitbox.width, car.hitbox.height, Vector(car.hitbox_offset.x, car.hitbox_offset.y, car.hitbox_offset.z))
 
             self.update(packet)
@@ -587,6 +665,7 @@ class car_object:
         self.name = None
         self.true_name = None
         self.team = -1
+        self.team_side = 0
         self.hitbox = hitbox_object()
         self.profile = {}
 
