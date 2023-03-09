@@ -9,26 +9,26 @@ from util.routines import BaseRoutine
 
 
 class GroundShot(routines.GroundShot):
-    def __init__(self, intercept_time: float, target_id: int, is_forwards: bool, shot_vector: Optional[Vector], weight: int):
-        super().__init__(intercept_time, target_id, is_forwards, shot_vector)
+    def __init__(self, shot_info: rlru.BasicShotInfo, target_id: int, weight: int):
+        super().__init__(shot_info, target_id)
         self.weight = weight
 
 
 class JumpShot(routines.JumpShot):
-    def __init__(self, intercept_time: float, target_id: int, is_forwards: bool, shot_vector: Optional[Vector], weight: int):
-        super().__init__(intercept_time, target_id, is_forwards, shot_vector)
+    def __init__(self, shot_info: rlru.BasicShotInfo, target_id: int, weight: int):
+        super().__init__(shot_info, target_id)
         self.weight = weight
 
 
 class DoubleJumpShot(routines.DoubleJumpShot):
-    def __init__(self, intercept_time: float, target_id: int, is_forwards: bool, shot_vector: Optional[Vector], weight: int):
-        super().__init__(intercept_time, target_id, is_forwards, shot_vector)
+    def __init__(self, shot_info: rlru.BasicShotInfo, target_id: int, weight: int):
+        super().__init__(shot_info, target_id)
         self.weight = weight
 
 
 class AerialShot(routines.AerialShot):
-    def __init__(self, intercept_time: float, target_id: int, is_forwards: bool, shot_vector: Optional[Vector], weight: int):
-        super().__init__(intercept_time, target_id, is_forwards, shot_vector)
+    def __init__(self, shot_info: rlru.BasicShotInfo, target_id: int, weight: int):
+        super().__init__(shot_info, target_id)
         self.weight = weight
 
 
@@ -182,9 +182,10 @@ class Shadow(BaseRoutine):
             self.goto.run(agent)
 
     @staticmethod
-    def switch_to_retreat(agent, ball, target):
+    def switch_to_retreat(agent: VirxERLU, ball: Vector, target: Vector) -> bool:
         return agent.me.location.y * utils.side(agent.team) < ball.y or ball.y > 2560 or target.y * utils.side(agent.team) > 4480 or agent.is_own_goal
 
+    @staticmethod
     def is_viable(agent: VirxERLU, ignore_distance: bool=False, ignore_retreat=False) -> bool:
         ball_loc = Shadow.get_ball_loc(agent)
         target = Shadow.get_target(agent, ball_loc)
@@ -261,7 +262,7 @@ class Retreat(BaseRoutine):
         ball = self.get_ball_loc(agent, render=True)
         target = self.get_target(agent, ball=ball)
 
-        if routines.Shadow().is_viable(agent, ignore_distance=True):
+        if Shadow.is_viable(agent, ignore_distance=True):
             agent.pop()
             agent.push(Shadow())
             return
