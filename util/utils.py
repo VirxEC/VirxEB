@@ -4,7 +4,7 @@ from typing import Generator, Optional, Tuple
 import numpy as np
 from numba import njit
 
-from util.agent import Vector, VirxERLU
+from util.agent import Matrix3, Vector, VirxERLU
 
 COAST_ACC = 525.0
 BRAKE_ACC = 3500
@@ -63,9 +63,16 @@ def _get_controller(target_angles: np.ndarray, angular_velocity: np.ndarray, dis
     return np.array((steer, pitch, yaw, roll), dtype=np.float32)
 
 
-def defaultPD(agent: VirxERLU, local_target: Vector, upside_down: bool=False, up: Optional[Vector]=None, distance: Optional[float]=None) -> Tuple[float, float, float]:
+def defaultPD(agent: VirxERLU, local_target: Vector, upside_down: bool=False, up: Optional[Vector]=None, distance: Optional[float]=None, inverse: bool=False) -> Tuple[float, float, float]:
     # points the car towards a given local target.
     # Direction can be changed to allow the car to steer towards a target while driving backwards
+
+    if inverse:
+        opp_mat = Matrix3.from_direction(-agent.me.forward, agent.me.up)
+        angular_velocity = opp_mat.dot(agent.me._angular_velocity)
+        local_target.x *= -1
+    else:
+        angular_velocity = agent.me.angular_velocity
 
     if up is None:
         up = agent.me.local(Vector(z=-1 if upside_down else 1))  # where "up" is in local coordinates
@@ -76,7 +83,7 @@ def defaultPD(agent: VirxERLU, local_target: Vector, upside_down: bool=False, up
         math.atan2(up.y, up.z)  # angle required to roll upright
     )
 
-    controller = _get_controller(np.array(target_angles, dtype=np.float32), agent.me.angular_velocity._np, distance)
+    controller = _get_controller(np.array(target_angles, dtype=np.float32), angular_velocity._np, distance)
 
     agent.controller.steer = controller[0]
     agent.controller.pitch = controller[1]
@@ -191,7 +198,7 @@ def defaultThrottle(agent: VirxERLU, target_speed: float, target_angles: Optiona
 
 
 def defaultDrive(agent: VirxERLU, target_speed: float, local_target: Vector, distance: Optional[float]=None) -> Tuple[Tuple[Vector, Vector, Vector], float]:
-    target_angles = defaultPD(agent, local_target, distance=distance)
+    target_angles = defaultPD(agent, local_target, distance=distance, inverse=target_speed < 0)
     velocity = defaultThrottle(agent, target_speed, target_angles, local_target)
 
     return target_angles, velocity
@@ -267,10 +274,10 @@ def curvature(v: float) -> float:
         return 0.0043 - 1.95e-6 * v
 
     if 1500 <= v < 1750:
-        return 0.003025 - 1.1e-7 * v
+        return 0.003025 - 1.1e-6 * v
 
     if 1750 <= v < 2500:
-        return 0.0018 - 0.4e-7 * v
+        return 0.0018 - 4e-7 * v
 
     return 0
 
@@ -280,7 +287,7 @@ def turn_radius(v: float) -> float:
     # v is the magnitude of the velocity in the car's forward direction
     if v == 0:
         return 0
-    return 1.0 / curvature(v)
+    return 1.0 / curvature(min(abs(v), 2300)) 
 
 
 def in_field(point: Vector, radius: float) -> bool:

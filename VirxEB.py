@@ -99,7 +99,7 @@ class VirxEB(VirxERLU):
         self.best_shot = (Vector(foe_team * 793, foe_team * 5213, min(self.ball_radius * 3, 321.3875)), Vector(-foe_team * 793, foe_team * 5213, max(642.775 - self.ball_radius * 2, 321.3875)))
         self.anti_shot = (Vector(-team * 1536, team * 5120, 1285.55), Vector(team * 1536, team * 5120, 1285.55))
 
-        if self.name in {"VirxEB", "VirxEMB"}:
+        if self.name == "VirxEB":
             print(f"{self.name}: Check me out at https://www.virxcase.dev!!!")
 
     def refresh_player_lists(self, packet: GameTickPacket):
@@ -413,7 +413,7 @@ class VirxEB(VirxERLU):
             if self.smart_shot(self.anti_shot, anti_shot_weight, friend_time_to_ball):
                 return
 
-            if self.is_clear():
+            if self.is_clear() and self.num_friends != 0:
                 self.push(ShortShot(self.foe_goal.location))
 
         if self.me.airborne:
@@ -423,8 +423,7 @@ class VirxEB(VirxERLU):
         if not self.is_own_goal and self.boost_amount != "no boost" and ((self.num_friends == 0 and self.me.boost < 36) or (self.num_friends > 1 and self.me.boost < 72)):
             if self.is_clear():
                 self.goto_nearest_boost()
-
-            if not self.is_clear():
+            else:
                 return
 
         if self.is_clear():

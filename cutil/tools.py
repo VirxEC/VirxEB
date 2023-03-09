@@ -114,10 +114,12 @@ def get_slices(agent: VirxERLU, cap_: int, weight: Optional[int]=None, start_sli
     if agent.shooting and agent.stack[0].__class__.__name__ not in {'ShortShot', 'short_shot'}:
         shot_weight = agent.stack[0].weight
         if shot_weight != -1:
+            # if the shot has a jumping property, and the property is True, then we shouldn't interrupt that
+            if hasattr(agent.stack[0], "jumping") and agent.stack[0].jumping:
+                return
+
             # Get the time remaining
             time_remaining = agent.stack[0].intercept_time - agent.time
-            if 0 < time_remaining < 0.5:
-                return
 
             # if the shot is done but it's working on it's 'follow through', then ignore this stuff
             if time_remaining > 0:

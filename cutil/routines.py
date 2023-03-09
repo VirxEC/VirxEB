@@ -3,6 +3,8 @@ from typing import Optional
 import numpy as np
 import virx_erlu_rlib as rlru
 from numba import njit
+
+from cutil import utils as cutils
 from util import routines, utils
 from util.agent import Vector, VirxERLU
 from util.routines import BaseRoutine
@@ -172,17 +174,17 @@ class Shadow(BaseRoutine):
 
         self_to_target = agent.me.location.flat_dist(target)
 
-        if self_to_target < 100 * (agent.me.velocity.magnitude() / 500) and ball_loc.y < -640 and agent.me.velocity.magnitude() < 50 and abs(Vector(x=1).angle2D(agent.me.local_location(agent.ball.location))) > 1:
+        if self_to_target < 100 * (agent.me.velocity.magnitude() / 500) and ball_loc.y * agent.friend_team_side < -640 and agent.me.velocity.magnitude() < 50 and abs(Vector(x=1).angle2D(agent.me.local_location(agent.ball.location))) > 1:
             agent.pop()
             if agent.num_friends > 1:
                 agent.push(routines.FaceTarget(ball=True))
         else:
             self.goto.target = target
-            self.goto.vector = ball_loc * Vector(y=utils.side(agent.team)) if target.y * utils.side(agent.team) < 1280 else None
+            self.goto.vector = ball_loc * Vector(y=agent.friend_team_side) if target.y * agent.friend_team_side < 1280 else None
             self.goto.run(agent)
 
     @staticmethod
-    def switch_to_retreat(agent: VirxERLU, ball: Vector, target: Vector) -> bool:
+    def switch_to_retreat(agent, ball, target):
         return agent.me.location.y * utils.side(agent.team) < ball.y or ball.y > 2560 or target.y * utils.side(agent.team) > 4480 or agent.is_own_goal
 
     @staticmethod
@@ -197,31 +199,33 @@ class Shadow(BaseRoutine):
         ball_slice = agent.ball.location
         ball_loc = Vector(ball_slice.x, ball_slice.y)
         if render: agent.sphere(ball_loc + Vector(z=agent.ball_radius), agent.ball_radius, color=agent.renderer.black())
-        ball_loc.y *= utils.side(agent.team)
+        ball_loc_team_y = ball_loc.y * agent.friend_team_side
 
-        if ball_loc.y < -2560 or (ball_loc.y < agent.ball.location.y * utils.side(agent.team)):
-            ball_loc = Vector(agent.ball.location.x, agent.ball.location.y * utils.side(agent.team) - 640)
+        if ball_loc_team_y < -2560 or (ball_loc_team_y < agent.ball.location.y * agent.friend_team_side):
+            ball_loc = Vector(agent.ball.location.x, (agent.ball.location.y * agent.friend_team_side - 640) * agent.friend_team_side)
 
         return ball_loc
 
     @staticmethod
     def get_target(agent: VirxERLU, ball_loc: Optional[Vector]=None) -> Vector:
+        horizontal_offset = 400
+
         if ball_loc is None:
             ball_loc = Shadow.get_ball_loc(agent)
 
         goal_diff = agent.game.friend_score - agent.game.foe_score
 
         if agent.num_friends > 0 and agent.playstyle is agent.playstyles.Neutral:
-            distance = 3840
+            distance = 2560
         elif agent.playstyle is agent.playstyles.Defensive:
-            distances = [
+            distances = (
                 1920,
-                3840,
-                4800
-            ]
+                4800,
+                7040
+            )
             distance = distances[min(agent.num_friends, 2)]
         else:
-            distance = 2560
+            distance = 1920
 
         if agent.num_foes != 0 and (agent.playstyle is not agent.playstyles.Defensive or agent.num_friends == 1):
             # factor in both the enemy's time to ball and the goal differential
@@ -235,28 +239,28 @@ class Shadow(BaseRoutine):
             # make the minimum distance be 1920
             distance = max(distance, 1920)
 
-        target = Vector(y=(ball_loc.y + distance) * utils.side(agent.team))
-        if target.y * utils.side(agent.team) > -1280:
-            # find the proper x coord for us to stop a shot going to the net
-            # y = mx + b <- yes, finally! 7th grade math is paying off xD
-            p1 = Retreat.get_target(agent)
-            p2 = ball_loc * Vector(x=1, y=utils.side(agent.team))
-            try:
-                m = (p2.y - p1.y) / (p2.x - p1.x)
-                b = p1.y - (m * p1.x)
-                # x = (y - b) / m
-                target.x = (target.y - b) / m
-            except ZeroDivisionError:
-                target.x = 0
+        if ball_loc.y * agent.friend_team_side > -1280:
+            target = ball_loc - (ball_loc - Retreat.get_target(agent)).flatten().scale(distance)
         else:
-            target.x = (abs(ball_loc.x) + 640) * utils._fsign(ball_loc.x)
+            target = ball_loc + (ball_loc - agent.foe_goal.location).flatten().scale(distance)
 
-        return Vector(target.x, target.y)
+        target_x = target.x
+
+        step = 2
+        while utils.friend_near_target(agent, Vector(target_x, target.y), horizontal_offset):
+            offset = horizontal_offset * step / 2
+            if step % 2 == 1:
+                offset *= -1
+            target_x = target.x + offset
+            step += 1
+        target.x = target_x
+
+        return target
 
 
 class Retreat(BaseRoutine):
     def __init__(self):
-        self.goto = routines.GoTo(Vector(), brake=True)
+        self.goto = routines.GoTo(Vector(), brake=True, slow=True)
 
     def run(self, agent: VirxERLU):
         ball = self.get_ball_loc(agent, render=True)
@@ -279,19 +283,12 @@ class Retreat(BaseRoutine):
 
         ball = Vector(ball_slice.x, ball_slice.y)
         if render: agent.sphere(ball + Vector(z=agent.ball_radius), agent.ball_radius, color=agent.renderer.black())
-        ball.y *= utils.side(agent.team)
+        ball.y *= agent.friend_team_side
 
-        if ball.y < agent.ball.location.y * utils.side(agent.team):
-            ball = Vector(agent.ball.location.x, agent.ball.location.y * utils.side(agent.team) + 640)
+        if ball.y < agent.ball.location.y * agent.friend_team_side:
+            ball = Vector(agent.ball.location.x, agent.ball.location.y * agent.friend_team_side + 640)
 
         return ball
-
-    @staticmethod
-    def friend_near_target(agent: VirxERLU, target):
-        for car in agent.friends:
-            if car.location.dist(target) < 400:
-                return True
-        return False
 
     @staticmethod
     def get_target(agent: VirxERLU, ball: Optional[Vector]=None) -> Vector:
@@ -308,71 +305,24 @@ class Retreat(BaseRoutine):
 
         is_closest_ally = agent.me.minimum_time_to_ball < agent.friend_times[0].minimum_time_to_ball
         closest_foe_location = agent.closest_foes[0].location._np if agent.num_foes > 0 else np.array([0, 0, 0])
+        is_defensive = agent.playstyle is agent.playstyles.Defensive
 
-        return Vector(np_arr=Retreat._get_target(friends, friend_goal, ball._np, closest_foe_location, np.int32(agent.team), agent.is_own_goal, agent.num_foes, is_closest_ally))
+        return Vector(np_arr=Retreat._get_target(friends, friend_goal, ball._np, closest_foe_location, np.int8(agent.friend_team_side), agent.is_own_goal, agent.num_foes, is_closest_ally, is_defensive))
 
     @staticmethod
-    @njit('Array(float32, 1, "C")(Array(float32, 2, "C"), Array(float32, 2, "C"), Array(float32, 1, "C"), Array(float32, 1, "C"), int32, b1, int32, b1)', fastmath=True, cache=True)
-    def _get_target(friends: np.ndarray, friend_goal: np.ndarray, ball: np.ndarray, closest_foe_location: np.ndarray, team: int, is_own_goal: bool, num_foes: int, is_closest_ally: bool) -> np.ndarray:
+    @njit('Array(float32, 1, "C")(Array(float32, 2, "C"), Array(float32, 2, "C"), Array(float32, 1, "C"), Array(float32, 1, "C"), int8, b1, int32, b1, b1)', fastmath=True, cache=True)
+    def _get_target(friends: np.ndarray, friend_goal: np.ndarray, ball: np.ndarray, closest_foe_location: np.ndarray, self_team: int, is_own_goal: bool, num_foes: int, is_closest_ally: bool, is_defensive: bool) -> np.ndarray:
         target = None
-        
-        self_team = utils.side(team)
-        num_friends = len(friends)
 
-        horizontal_offset = 150
         outside_goal_offset = -125
         inside_goal_offset = 150
 
         if is_own_goal:
             target = np.array((ball[0], friend_goal[0][1], 0), dtype=np.float32)
-        elif num_foes != 0 and (num_friends == 0 or is_closest_ally):
-            real_ball = ball * np.array((0, self_team, 0), dtype=np.float32)
-            s = real_ball - closest_foe_location
-            s /= np.linalg.norm(s)
-            start = friend_goal[1] - real_ball
-            start /= np.linalg.norm(start)
-            end = friend_goal[2] - real_ball
-            end /= np.linalg.norm(end)
-
-            neg_one = np.array((0, 0, -1), dtype=np.float32)
-            right = s.dot(np.cross(end, neg_one)) < 0
-            left = s.dot(np.cross(start, neg_one)) > 0
-
-            if (right and left) if end.dot(np.cross(start, neg_one)) > 0 else (right or left):
-                target = np.array((0, friend_goal[0][1], 0), dtype=np.float32)
-                p1 = real_ball
-                p2 = real_ball - s
-                x_diff = p2[0] - p1[0]
-                if x_diff == 0:
-                    target[0] = 0
-                else:
-                    m = (p2[1] - p1[1]) / (p2[0] - p1[0])
-                    b = p1[1] - (m * p1[0])
-                    # x = (y - b) / m
-                    target[0] = (target[1] - b) / m
-            elif start.dot(s) < end.dot(s):
-                target = friend_goal[2].copy()
-            else:
-                target = friend_goal[1].copy()
+        elif num_foes != 0 and (len(friends) == 0 or is_closest_ally or is_defensive):
+            target = cutils.get_clamp_target(friend_goal, ball, closest_foe_location, self_team)
         else:
-            if ball[1] < -640:
-                target = friend_goal[0].copy()
-            elif ball[0] * self_team < friend_goal[2][0] * self_team:
-                target = friend_goal[2].copy()
-
-                while utils.friend_near_target(friends, target):
-                    target[0] = (target[0] * self_team + horizontal_offset * self_team) * self_team
-            elif ball[0] * self_team > friend_goal[1][0] * self_team:
-                target = friend_goal[1].copy()
-
-                while utils.friend_near_target(friends, target):
-                    target[0] = (target[0] * self_team - horizontal_offset * self_team) * self_team
-            else:
-                target = friend_goal[0].copy()
-                target[0] = ball[0]
-
-                while utils.friend_near_target(friends, target):
-                    target[0] = (target[0] * self_team - horizontal_offset * utils._fsign(ball[0]) * self_team) * self_team
+            target = cutils.get_traditional_target(friends, friend_goal, ball, self_team)
 
         target[1] += (inside_goal_offset if abs(target[0]) < 800 else outside_goal_offset) * self_team
         target[2] = 0
@@ -410,7 +360,7 @@ class CornerKickoff(BaseRoutine):
                 agent.controller.steer = self.direction
             elif self.flip_done is None:
                 if self.flip is None:
-                    self.flip = routines.Flip(Vector(64, -36 * utils._fsign(agent.me.location.x * utils.side(agent.team))), agent.ball.location.flatten())
+                    self.flip = routines.Flip(Vector(6, -4 * utils._fsign(agent.me.location.x * agent.friend_team_side)), agent.ball.location.flatten())
 
                 self.flip_done = self.flip.run(agent, manual=True)
                 if abs(Vector(x=1).angle2D(agent.me.local_location(agent.ball.location))) < 0.05:
@@ -498,8 +448,8 @@ class BackOffsetKickoff:
             self.do_boost = agent.me.boost != 0
             agent.controller.boost = True
 
-        if self.flip is None and agent.me.location.flat_dist(self.boost_pad.location + Vector(y=320 * utils.side(agent.team))) > 380:
-            utils.defaultPD(agent, agent.me.local_location(self.boost_pad.location + Vector(y=320 * utils.side(agent.team))))
+        if self.flip is None and agent.me.location.flat_dist(self.boost_pad.location + Vector(y=320 * agent.friend_team_side)) > 380:
+            utils.defaultPD(agent, agent.me.local_location(self.boost_pad.location + Vector(y=320 * agent.friend_team_side)))
         elif self.flip_done is None:
             if self.flip is None:
                 self.boost_pad = tuple(boost for boost in agent.boosts if not boost.large and boost.active and abs(boost.location.x) < 5 and abs(boost.location.y) < 2000)
@@ -513,7 +463,7 @@ class BackOffsetKickoff:
                     return
 
                 self.boost_pad = min(self.boost_pad, key=lambda boost: boost.location.flat_dist(agent.me.location))
-                self.flip = routines.Flip(Vector(27, 73 * utils._fsign(agent.me.location.x * utils.side(agent.team))), agent.ball.location.flatten())
+                self.flip = routines.Flip(Vector(27, 73 * utils._fsign(agent.me.location.x * agent.friend_team_side)), agent.ball.location.flatten())
 
             self.flip_done = self.flip.run(agent, manual=True)
         elif self.flip_predrive is None or agent.time - self.flip_predrive <= 0.19:
