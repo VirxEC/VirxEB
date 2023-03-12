@@ -48,7 +48,7 @@ def find_aerial(agent: VirxERLU, target: Tuple[Vector, Vector], cap_: int=6) -> 
 def find_any_aerial(agent: VirxERLU, cap_: int=6) -> Optional[AerialShot]:
     return find_any_shot(agent, cap_, can_double_jump=False, can_jump=False, can_ground=False)
 
-    
+
 def find_shot(agent: VirxERLU, target: Tuple[Vector, Vector], weight: int=0, cap_: int=6, can_aerial: bool=True, can_double_jump: bool=True, can_jump: bool=True, can_ground: bool=True) -> Optional[GroundShot | JumpShot | DoubleJumpShot | AerialShot]:
     if not can_aerial and not can_double_jump and not can_jump and not can_ground:
         agent.print("WARNING: All shots were disabled when find_shot was ran")
@@ -64,7 +64,7 @@ def find_shot(agent: VirxERLU, target: Tuple[Vector, Vector], weight: int=0, cap
         return
 
     # Construct the target
-    options = rlru.TargetOptions(*slices)
+    options = rlru.TargetOptions(*slices, fowards_only=True)
     target_id = rlru.new_target(tuple(target[0]), tuple(target[1]), agent.index, options)
 
     # Search for the shot
