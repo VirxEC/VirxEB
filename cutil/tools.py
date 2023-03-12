@@ -64,7 +64,7 @@ def find_shot(agent: VirxERLU, target: Tuple[Vector, Vector], weight: int=0, cap
         return
 
     # Construct the target
-    options = rlru.TargetOptions(*slices, fowards_only=True)
+    options = rlru.TargetOptions(*slices, forwards_only=True)
     target_id = rlru.new_target(tuple(target[0]), tuple(target[1]), agent.index, options)
 
     # Search for the shot
